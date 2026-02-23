@@ -125,7 +125,7 @@ details[open]>summary::before{transform:rotate(90deg)}
 
 <div class="wrap">
   <div id="m"></div>
-  <div class="footer">PG Weather Triage v0.3</div>
+  <div class="footer">PG Weather Triage v0.4</div>
 </div>
 
 <script>
@@ -143,8 +143,9 @@ function badge(s){return'<span class="badge b-'+((s||'ERROR').replace('-',''))+'
 
 function render(date){
   const d=R[date];if(!d){document.getElementById('m').innerHTML='<div class="empty">No data</div>';return}
+  var forecastDate=d.forecast_date||d.date||date;
   document.getElementById('hdr-meta').textContent=
-    'Generated: '+d.generated_at+' \u00b7 Sources: '+(d.sources_used||[]).join(', ');
+    'Forecast: '+forecastDate+' \u00b7 Generated: '+d.generated_at+' \u00b7 Sources: '+(d.sources_used||[]).join(', ');
 
   const locs=(d.locations||[]).slice().sort(function(a,b){
     var sa=(a.assessment||{}).status||'ERROR',sb=(b.assessment||{}).status||'ERROR';
@@ -152,8 +153,8 @@ function render(date){
   });
 
   var h='';
+  h+='<h2>\ud83d\udcc5 Forecast for: '+esc(forecastDate)+'</h2>';
   h+=renderSummary(locs);
-  h+=renderObs(d.observations);
   h+='<h2>\ud83d\udccd Location Details</h2>';
   locs.forEach(function(loc){h+=renderCard(loc)});
   document.getElementById('m').innerHTML=h;
@@ -199,40 +200,6 @@ function renderSummary(locs){
   h+='</table></div></div>';
   return h;
 }
-
-function renderObs(obs){
-  if(!obs)return'';
-  var sts=obs.stations||[];
-  if(!sts.length)return'';
-
-  var h='<h2>\ud83c\udf21\ufe0f Current Observations</h2><div class="sbox">';
-  h+='<p class="meta" style="margin-bottom:0.5rem">'+esc(obs.timestamp)+'</p>';
-  h+='<table><tr><th>Station</th><th class="n">T</th>';
-  h+='<th class="n">Wind</th><th class="n">Gusts</th>';
-  h+='<th class="n">Dir</th><th class="n">RH</th></tr>';
-
-  sts.forEach(function(s){
-    h+='<tr><td>'+esc(s.station)+'</td>';
-    h+='<td class="n">'+fmt(s.T,'\u00b0C')+'</td>';
-    h+='<td class="n">'+fmt(s.FF,' m/s')+'</td>';
-    h+='<td class="n">'+fmt(s.FFX,' m/s')+'</td>';
-    h+='<td class="n">'+fmt(s.DD,'\u00b0',0)+'</td>';
-    h+='<td class="n">'+fmt(s.RF,'%',0)+'</td></tr>';
-  });
-  h+='</table>';
-
-  var fc=obs.foehn||{};
-  if(fc.foehn_likely){
-    h+='<div class="foehn foehn-danger">\ud83d\udd34 FOEHN LIKELY: '+esc((fc.flags||[]).join(', '))+'</div>';
-  }else if(fc.foehn_possible){
-    h+='<div class="foehn foehn-warn">\ud83d\udfe1 Foehn possible: '+esc((fc.flags||[]).join(', '))+'</div>';
-  }else{
-    h+='<div class="foehn foehn-ok">\ud83d\udfe2 No foehn indicators</div>';
-  }
-  h+='</div>';
-  return h;
-}
-
 function renderCard(r){
   var a=r.assessment||{};
   var s=a.status||'ERROR';
@@ -432,7 +399,12 @@ function renderCard(r){
   var sel=document.getElementById('ds');
   dates.forEach(function(d){
     var opt=document.createElement('option');
-    opt.value=d;opt.textContent=d;
+    opt.value=d;
+    /* Show "Forecast: YYYY-MM-DD (generated HH:MM)" */
+    var rd=R[d]||{};
+    var fc=rd.forecast_date||rd.date||d;
+    var gt=rd.generated_at||'';
+    opt.textContent=fc+' ('+gt+')';
     sel.appendChild(opt);
   });
   sel.addEventListener('change',function(){render(sel.value)});

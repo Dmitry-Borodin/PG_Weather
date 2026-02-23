@@ -1,13 +1,12 @@
 #!/usr/bin/env python3
 """
 Сбор прогнозных данных для метео-триажа XC closed routes.
-Версия: 0.3
+Версия: 0.4
 
 Источники:
   - Open-Meteo ICON-D2 (hi-res, 2 км)
   - Open-Meteo GFS (BL height, CAPE, CIN, LI)
   - Open-Meteo мультимодельное сравнение
-  - GeoSphere Austria TAWES (текущие наблюдения)
   - GeoSphere NWP (прогноз CAPE, облачность, снеговая линия)
   - BrightSky (DWD wrapper)
   - DWD MOSMIX (114 параметров, облачность по уровням, радиация)
@@ -21,9 +20,9 @@
   - HTML viewer (index.html — единый интерфейс для всех отчётов)
 
 Использование:
-    python scripts/fetch_weather.py --date 2025-07-15
+    python scripts/fetch_weather.py                                  # след. суббота, все
+    python scripts/fetch_weather.py --date 2025-07-15                # конкретная дата
     python scripts/fetch_weather.py --date 2025-07-15 --locations lenggries,koessen
-    python scripts/fetch_weather.py --date 2025-07-15 --sources all
 """
 
 import argparse
@@ -34,7 +33,7 @@ import subprocess
 import shutil
 import sys
 import zipfile
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from urllib.request import urlopen, Request
 from urllib.parse import urlencode
@@ -54,32 +53,30 @@ LOCATIONS = {
     "bassano":     {"lat": 45.78, "lon": 11.73, "elev": 130,  "peaks": 1700, "name": "Bassano",     "geosphere_id": None,    "mosmix_id": None,    "drive_h": 5.0},
 }
 
-# GeoSphere Austria station IDs for observations
-GEOSPHERE_STATIONS = {
-    "11121": "Innsbruck Airport",
-    "11320": "Innsbruck Uni",
-    "11130": "Kufstein",
-    "11204": "Lienz",
-    "11279": "Kitzbühel",
-    "11144": "Zell am See",
-    "11364": "St. Johann im Pongau",
-}
-
 # Часы анализа для почасового профиля (Europe/Berlin)
 ANALYSIS_HOURS = ["08:00", "09:00", "10:00", "11:00", "12:00",
                   "13:00", "14:00", "15:00", "16:00", "17:00", "18:00"]
 
 
+def _next_saturday() -> str:
+    """Ближайшая суббота (или сегодня, если суббота). Формат YYYY-MM-DD."""
+    today = datetime.now().date()
+    days_ahead = (5 - today.weekday()) % 7  # 5 = Saturday
+    if days_ahead == 0 and today.weekday() != 5:
+        days_ahead = 7
+    return str(today + timedelta(days=days_ahead))
+
+
 def _fetch_json(url: str, timeout: int = 30) -> dict:
     """HTTP GET → JSON."""
-    req = Request(url, headers={"User-Agent": "PG-Weather-Triage/0.3"})
+    req = Request(url, headers={"User-Agent": "PG-Weather-Triage/0.4"})
     with urlopen(req, timeout=timeout) as resp:
         return json.loads(resp.read().decode())
 
 
 def _fetch_bytes(url: str, timeout: int = 30) -> bytes:
     """HTTP GET → bytes."""
-    req = Request(url, headers={"User-Agent": "PG-Weather-Triage/0.3"})
+    req = Request(url, headers={"User-Agent": "PG-Weather-Triage/0.4"})
     with urlopen(req, timeout=timeout) as resp:
         return resp.read()
 
@@ -166,18 +163,7 @@ def fetch_multimodel(lat: float, lon: float, date: str) -> dict:
 
 
 # ──────────────────────────────────────────────
-# Источник 4: GeoSphere Austria — текущие наблюдения
-# ──────────────────────────────────────────────
-
-def fetch_geosphere_observations() -> dict:
-    """Текущие данные со всех отслеживаемых станций."""
-    ids = ",".join(GEOSPHERE_STATIONS.keys())
-    url = f"https://dataset.api.hub.geosphere.at/v1/station/current/tawes-v1-10min?parameters=TL,FF,FFX,DD,RF&station_ids={ids}"
-    return _fetch_json(url)
-
-
-# ──────────────────────────────────────────────
-# Источник 5: GeoSphere NWP (AROME-based 2.5 км)
+# Источник 4: GeoSphere NWP (AROME-based 2.5 км)
 # ──────────────────────────────────────────────
 
 def fetch_geosphere_nwp(lat: float, lon: float) -> dict:
@@ -322,30 +308,6 @@ def wind_from_uv(u: float, v: float) -> tuple:
     speed = math.sqrt(u**2 + v**2)
     direction = (270 - math.degrees(math.atan2(v, u))) % 360
     return round(speed, 1), round(direction)
-
-
-def foehn_check(obs: dict) -> dict:
-    """Простой фён-чекер по наблюдениям Innsbruck."""
-    flags = []
-    dd = obs.get("DD")
-    ffx = obs.get("FFX")
-    rf = obs.get("RF")
-    t = obs.get("T")
-
-    if dd is not None and 150 <= dd <= 230:
-        flags.append(f"wind_from_south ({dd}°)")
-    if ffx is not None and ffx > 8:
-        flags.append(f"strong_gusts ({ffx:.1f} m/s)")
-    if rf is not None and rf < 40:
-        flags.append(f"dry_air (RH={rf:.0f}%)")
-    if t is not None and t > 15:
-        flags.append(f"warm ({t:.1f}°C)")
-
-    return {
-        "foehn_likely": len(flags) >= 3,
-        "foehn_possible": len(flags) >= 2,
-        "flags": flags,
-    }
 
 
 # ──────────────────────────────────────────────
@@ -738,10 +700,10 @@ STATUS_EMOJI = {
 STATUS_ORDER = {"STRONG": 0, "GO": 1, "MAYBE": 2, "UNLIKELY": 3, "NO-GO": 4}
 
 
-def print_triage(results: list):
+def print_triage(results: list, forecast_date: str = ""):
     """Краткий вывод в stdout."""
     print("\n" + "=" * 70)
-    print("  QUICK TRIAGE — XC Closed Route Assessment")
+    print(f"  QUICK TRIAGE — Forecast for {forecast_date}")
     print("=" * 70)
 
     sorted_results = sorted(results, key=lambda r: STATUS_ORDER.get(
@@ -804,70 +766,6 @@ def print_triage(results: list):
     print(f"\n{'=' * 70}\n")
 
 
-def get_observations_data() -> tuple:
-    """Fetch and process GeoSphere observations. Returns (obs_info dict, raw data)."""
-    try:
-        obs_raw = fetch_geosphere_observations()
-        return obs_raw, True
-    except Exception as e:
-        print(f"\n  GeoSphere observations: ERROR — {e}", file=sys.stderr)
-        return {}, False
-
-
-def print_observations(obs_data: dict) -> dict:
-    """Текущие наблюдения со станций Австрии + фён-чек. Returns obs_info."""
-    foehn_result = {"status": "unknown", "flags": []}
-    try:
-        features = obs_data.get("features", [])
-        timestamps = obs_data.get("timestamps", [])
-        ts = timestamps[-1] if timestamps else "?"
-
-        print(f"\n{'─' * 70}")
-        print(f"  CURRENT OBSERVATIONS (GeoSphere Austria) — {ts}")
-        print(f"{'─' * 70}")
-
-        innsbruck_obs = {}
-        obs_list = []
-        for feat in features:
-            props = feat["properties"]
-            sid = props.get("station", "?")
-            sname = GEOSPHERE_STATIONS.get(sid, sid)
-            params_data = props.get("parameters", {})
-
-            t_val = params_data.get("TL", {}).get("data", [None])[0]
-            ff = params_data.get("FF", {}).get("data", [None])[0]
-            ffx = params_data.get("FFX", {}).get("data", [None])[0]
-            dd = params_data.get("DD", {}).get("data", [None])[0]
-            rf = params_data.get("RF", {}).get("data", [None])[0]
-
-            def _fmt(v, unit=""):
-                return f"{v}{unit}" if v is not None else "—"
-
-            print(f"  {sname:30s}  T={_fmt(t_val, '°C')}  FF={_fmt(ff, 'm/s')}  FFX={_fmt(ffx, 'm/s')}  DD={_fmt(dd, '°')}  RH={_fmt(rf, '%')}")
-
-            obs_list.append({"station": sname, "station_id": sid,
-                             "T": t_val, "FF": ff, "FFX": ffx, "DD": dd, "RF": rf})
-
-            if sid in ("11121", "11320"):
-                innsbruck_obs = {"T": t_val, "FF": ff, "FFX": ffx, "DD": dd, "RF": rf}
-
-        if innsbruck_obs:
-            fc = foehn_check(innsbruck_obs)
-            foehn_result = fc
-            if fc["foehn_likely"]:
-                print(f"\n  🔴 FOEHN LIKELY at Innsbruck: {', '.join(fc['flags'])}")
-            elif fc["foehn_possible"]:
-                print(f"\n  🟡 FOEHN POSSIBLE at Innsbruck: {', '.join(fc['flags'])}")
-            else:
-                print(f"\n  🟢 No foehn indicators at Innsbruck")
-
-        return {"timestamp": ts, "stations": obs_list, "foehn": foehn_result}
-
-    except Exception as e:
-        print(f"\n  GeoSphere observations: ERROR — {e}", file=sys.stderr)
-        return {"timestamp": "?", "stations": [], "foehn": foehn_result}
-
-
 # ══════════════════════════════════════════════
 # MARKDOWN REPORT
 # ══════════════════════════════════════════════
@@ -881,10 +779,12 @@ def _v(val, unit="", precision=1):
     return f"{val}{unit}"
 
 
-def generate_markdown_report(results: list, obs_info: dict, date: str, gen_time: str) -> str:
+def generate_markdown_report(results: list, date: str, gen_time: str) -> str:
     """Генерация Markdown-отчёта."""
     lines = []
-    lines.append(f"# ✈️ PG Weather Triage — {date}")
+    lines.append(f"# ✈️ PG Weather Triage")
+    lines.append("")
+    lines.append(f"**Forecast for: {date}**")
     lines.append("")
     lines.append(f"*Generated: {gen_time}*")
     lines.append("")
@@ -917,32 +817,6 @@ def generate_markdown_report(results: list, obs_info: dict, date: str, gen_time:
             f"| {tw_str} |"
         )
     lines.append("")
-
-    # ── Observations ──
-    if obs_info.get("stations"):
-        lines.append("## 🌡️ Current Observations (GeoSphere Austria)")
-        lines.append(f"*{obs_info.get('timestamp', '?')}*")
-        lines.append("")
-        lines.append("| Station | T | Wind | Gusts | Dir | RH |")
-        lines.append("|---------|---|------|-------|-----|----|")
-        for st in obs_info.get("stations", []):
-            lines.append(
-                f"| {st['station']} "
-                f"| {_v(st['T'],'°C')} "
-                f"| {_v(st['FF'],'m/s')} "
-                f"| {_v(st['FFX'],'m/s')} "
-                f"| {_v(st['DD'],'°',0)} "
-                f"| {_v(st['RF'],'%',0)} |"
-            )
-
-        fc = obs_info.get("foehn", {})
-        if fc.get("foehn_likely"):
-            lines.append(f"\n🔴 **FOEHN LIKELY** at Innsbruck: {', '.join(fc['flags'])}")
-        elif fc.get("foehn_possible"):
-            lines.append(f"\n🟡 **Foehn possible** at Innsbruck: {', '.join(fc['flags'])}")
-        else:
-            lines.append(f"\n🟢 No foehn indicators at Innsbruck")
-        lines.append("")
 
     # ── Location details ──
     lines.append("---")
@@ -1137,18 +1011,21 @@ def run_headless_scraper(date: str, locs: dict, headless_sources: list) -> list:
 
 def main():
     parser = argparse.ArgumentParser(description="PG Weather Triage — data fetcher & report generator")
-    parser.add_argument("--date", required=True, help="Date YYYY-MM-DD")
+    parser.add_argument("--date", default=None,
+                        help="Forecast date YYYY-MM-DD (default: next Saturday)")
     parser.add_argument("--locations", default="all", help="Comma-separated keys or 'all'")
     parser.add_argument("--sources", default="all",
                         help=f"Comma-separated sources or 'all'. Available: {','.join(ALL_SOURCES)}")
     parser.add_argument("--output-dir", default="reports", help="Output directory (default: reports)")
-    parser.add_argument("--no-observations", action="store_true", help="Skip GeoSphere current observations")
     parser.add_argument("--no-markdown", action="store_true", help="Skip Markdown report generation")
     parser.add_argument("--no-viewer", action="store_true", help="Skip HTML viewer (index.html) generation")
     parser.add_argument("--no-scraper", action="store_true", help="Skip headless browser sources")
     parser.add_argument("--headless-sources", default="meteo_parapente",
                         help=f"Comma-separated headless sources. Available: {','.join(HEADLESS_SOURCES)}")
     args = parser.parse_args()
+
+    forecast_date = args.date or _next_saturday()
+    print(f"Forecast date: {forecast_date}", file=sys.stderr)
 
     sources = ALL_SOURCES if args.sources == "all" else [s.strip() for s in args.sources.split(",")]
 
@@ -1161,23 +1038,16 @@ def main():
             print(f"No valid locations. Available: {', '.join(LOCATIONS.keys())}", file=sys.stderr)
             sys.exit(1)
 
-    gen_time = datetime.now(tz=timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
-
-    # Наблюдения
-    obs_info = {"timestamp": "?", "stations": [], "foehn": {}}
-    if not args.no_observations:
-        try:
-            obs_raw = fetch_geosphere_observations()
-            obs_info = print_observations(obs_raw)
-        except Exception as e:
-            print(f"\n  GeoSphere observations: ERROR — {e}", file=sys.stderr)
+    now = datetime.now(tz=timezone.utc)
+    gen_time = now.strftime("%Y-%m-%d %H:%M UTC")
+    timestamp_suffix = now.strftime("%Y%m%d_%H%M")
 
     # Прогнозы
     results = []
     for key, loc in locs.items():
         print(f"\nFetching {loc['name']}...", file=sys.stderr)
         try:
-            result = assess_location(key, loc, args.date, sources)
+            result = assess_location(key, loc, forecast_date, sources)
             results.append(result)
         except Exception as e:
             print(f"  ERROR for {loc['name']}: {e}", file=sys.stderr)
@@ -1190,7 +1060,7 @@ def main():
         hs = [s.strip() for s in args.headless_sources.split(",")]
         hs = [s for s in hs if s in HEADLESS_SOURCES]
         if hs:
-            scraper_data = run_headless_scraper(args.date, locs, hs)
+            scraper_data = run_headless_scraper(forecast_date, locs, hs)
             # Merge scraper results into location results
             for sd in scraper_data:
                 src = sd.get("source", "unknown")
@@ -1201,7 +1071,7 @@ def main():
                         break
 
     # Console output
-    print_triage(results)
+    print_triage(results, forecast_date)
 
     # Output directory
     out_dir = Path(args.output_dir)
@@ -1225,21 +1095,22 @@ def main():
 
     json_output = {
         "generated_at": gen_time,
-        "date": args.date,
+        "forecast_date": forecast_date,
         "sources_used": sources,
-        "observations": obs_info,
         "locations": json_results,
     }
 
-    json_path = out_dir / f"{args.date}.json"
+    # Filename: forecast-date + generation timestamp
+    file_stem = f"{forecast_date}_{timestamp_suffix}"
+    json_path = out_dir / f"{file_stem}.json"
     with open(json_path, "w", encoding="utf-8") as f:
         json.dump(json_output, f, ensure_ascii=False, indent=2)
     print(f"JSON report:     {json_path}", file=sys.stderr)
 
     # ── Markdown ──
     if not args.no_markdown:
-        md_content = generate_markdown_report(results, obs_info, args.date, gen_time)
-        md_path = out_dir / f"{args.date}.md"
+        md_content = generate_markdown_report(results, forecast_date, gen_time)
+        md_path = out_dir / f"{file_stem}.md"
         with open(md_path, "w", encoding="utf-8") as f:
             f.write(md_content)
         print(f"Markdown report: {md_path}", file=sys.stderr)
