@@ -1,20 +1,25 @@
 # AGENTS — Операционные правила проекта
 
-**Версия:** 1.1
+**Версия:** 1.2
 
 ## Структура проекта
 
 ```
 AGENTS.md                          # Этот файл
 .gitignore                         # reports/ исключены из git
-run.sh                             # Точка входа: ./run.sh YYYY-MM-DD
+.dockerignore                      # Исключения для Docker-сборки
+Dockerfile                         # Образ: Python + Deno + Playwright
+run.sh                             # Точка входа: ./run.sh / ./run.sh --docker
 requirements/
     weather-triage.md              # Требования к метео-триажу
     data-sources.md                # Источники данных + методы парсинга
+prompts/
+    weather-triage-prompt.md       # Промпт для LLM-ассистента
 scripts/
     fetch_weather.py               # Сбор данных из открытых источников
+    scraper.ts                     # Deno + Playwright: headless-скрапинг
+    viewer_template.html           # Шаблон HTML-вьюера отчётов
 reports/                           # Автогенерируемые отчёты (gitignored)
-заметки/                           # Рабочие заметки и черновики
 ```
 
 ## Версионирование
@@ -22,6 +27,12 @@ reports/                           # Автогенерируемые отчёт
 - Версия должна соответствовать фактическим изменениям.
 
 ## Скрипты
-- Запуск из корня: `./run.sh YYYY-MM-DD [LOCATIONS] [SOURCES]`
+- Локальный запуск (без headless): `./run.sh YYYY-MM-DD [LOCATIONS] [SOURCES]`
+- Docker запуск (с headless Playwright): `./run.sh --docker YYYY-MM-DD [LOCATIONS] [SOURCES] [HEADLESS_SOURCES]`
+- Python-часть не требует pip-зависимостей (только stdlib).
+- Headless-скрапинг (Deno + Playwright) работает только из Docker.
 - Скрипты не требуют платных API-ключей для базовой функциональности.
-- Только Python stdlib (без pip-зависимостей).
+
+## Git
+- **Агент НЕ коммитит в git** — только чтение (log, diff, status).
+- Коммиты делает пользователь вручную.
