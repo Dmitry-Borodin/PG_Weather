@@ -119,6 +119,7 @@ GFS_PARAMS = [
     "cape", "convective_inhibition", "lifted_index",
     "boundary_layer_height",
     "cloudcover", "precipitation",
+    "shortwave_radiation",
     "temperature_850hPa", "temperature_700hPa", "temperature_500hPa",
     "windspeed_850hPa", "windspeed_700hPa",
     "winddirection_850hPa", "winddirection_700hPa",
@@ -303,6 +304,28 @@ def lapse_rate(t850: float, t700: float) -> float:
     return (t850 - t700) / 1.5
 
 
+def estimate_wstar(bl_height_m: float, sw_radiation_wm2: float, temp_c: float) -> float:
+    """Estimate W* (Deardorff convective velocity scale) [m/s].
+
+    RASP-like thermal strength indicator.
+    W* = (g / T_K * BL_h * H_s / (rho * cp))^(1/3)
+    where H_s ≈ 0.4 * shortwave_radiation (sensible heat fraction for dry mountain terrain).
+    """
+    if bl_height_m <= 10 or sw_radiation_wm2 <= 10:
+        return 0.0
+    g = 9.81       # m/s²
+    rho = 1.1      # kg/m³ (approx at ~1000m)
+    cp = 1005.0    # J/(kg·K)
+    T_K = temp_c + 273.15
+    if T_K < 200:
+        return 0.0
+    H_s = 0.4 * sw_radiation_wm2  # sensible heat fraction
+    arg = (g / T_K) * bl_height_m * H_s / (rho * cp)
+    if arg <= 0:
+        return 0.0
+    return round(arg ** (1.0 / 3.0), 2)
+
+
 def wind_from_uv(u: float, v: float) -> tuple:
     """(speed m/s, direction °) from u,v components."""
     speed = math.sqrt(u**2 + v**2)
@@ -357,6 +380,7 @@ def analyze_hourly_window(hourly_icon: dict, hourly_gfs: dict, loc: dict) -> dic
 
         bl = _get(hourly_gfs, times_gfs, "boundary_layer_height", hour)
         cape = _get(hourly_gfs, times_gfs, "cape", hour)
+        sw_rad = _get(hourly_gfs, times_gfs, "shortwave_radiation", hour)
 
         base_msl = None
         if t2m is not None and td is not None:
@@ -365,6 +389,10 @@ def analyze_hourly_window(hourly_icon: dict, hourly_gfs: dict, loc: dict) -> dic
         lr = None
         if t850 is not None and t700 is not None:
             lr = round(lapse_rate(t850, t700), 1)
+
+        wstar = None
+        if bl is not None and sw_rad is not None and t2m is not None:
+            wstar = estimate_wstar(bl, sw_rad, t2m)
 
         profile.append({
             "hour": hour,
@@ -378,26 +406,35 @@ def analyze_hourly_window(hourly_icon: dict, hourly_gfs: dict, loc: dict) -> dic
             "lapse_rate": lr,
             "bl_height": bl,
             "cape": cape,
+            "wstar": wstar,
         })
 
-    # Определение термического окна
+    # Определение термического окна:
+    #  - Час считается "термическим" ТОЛЬКО если W* >= 1.5 м/с
+    #  - И база (margin над пиками) >= 1000 м
+    #  - И нет осадков (precipitation <= 0.1)
+    peaks = loc["peaks"]
     thermal_hours = []
+
     for p in profile:
         h = int(p["hour"].split(":")[0])
         if h < 9:
             continue
-        # Require at least SOME data to consider as thermal hour
-        has_data = any(p.get(k) is not None for k in
-                       ("temp_2m", "cloudcover", "precipitation", "wind_850"))
-        if not has_data:
+        wstar = p.get("wstar")
+        precip = p.get("precipitation")
+        base = p.get("cloudbase_msl")
+
+        # Must have W* >= 1.5
+        if wstar is None or wstar < 1.5:
             continue
-        is_thermal = True
-        if p["cloudcover"] is not None and p["cloudcover"] > 70:
-            is_thermal = False
-        if p["precipitation"] is not None and p["precipitation"] > 0.3:
-            is_thermal = False
-        if is_thermal:
-            thermal_hours.append(p)
+        # No precipitation
+        if precip is not None and precip > 0.1:
+            continue
+        # Base margin must be >= 1000m over peaks
+        if base is not None and (base - peaks) < 1000:
+            continue
+
+        thermal_hours.append(p)
 
     window = {"start": None, "end": None, "peak_hour": None,
               "duration_h": 0, "peak_lapse": None, "peak_cape": None}
@@ -565,17 +602,23 @@ def assess_location(loc_key: str, loc: dict, date: str, sources: list) -> dict:
     icon = result["sources"].get("icon_d2", {}).get("at_13", {})
     gfs_data = result["sources"].get("gfs", {}).get("at_13", {})
 
-    t2m = icon.get("temperature_2m") or gfs_data.get("temperature_2m")
-    td2m = icon.get("dewpoint_2m") or gfs_data.get("dewpoint_2m")
-    ws850 = icon.get("windspeed_850hPa") or gfs_data.get("windspeed_850hPa")
-    ws700 = icon.get("windspeed_700hPa") or gfs_data.get("windspeed_700hPa")
-    gusts = icon.get("windgusts_10m") or gfs_data.get("windgusts_10m")
-    cape = icon.get("cape") or gfs_data.get("cape")
-    t850 = icon.get("temperature_850hPa") or gfs_data.get("temperature_850hPa")
-    t700 = icon.get("temperature_700hPa") or gfs_data.get("temperature_700hPa")
-    cloud = icon.get("cloudcover")
-    precip = icon.get("precipitation") or gfs_data.get("precipitation")
+    def _fb(d1, d2, key):
+        """Fallback: d1[key] if not None, else d2[key]. Handles 0 correctly."""
+        v = d1.get(key)
+        return v if v is not None else d2.get(key)
+
+    t2m = _fb(icon, gfs_data, "temperature_2m")
+    td2m = _fb(icon, gfs_data, "dewpoint_2m")
+    ws850 = _fb(icon, gfs_data, "windspeed_850hPa")
+    ws700 = _fb(icon, gfs_data, "windspeed_700hPa")
+    gusts = _fb(icon, gfs_data, "windgusts_10m")
+    cape = _fb(icon, gfs_data, "cape")
+    t850 = _fb(icon, gfs_data, "temperature_850hPa")
+    t700 = _fb(icon, gfs_data, "temperature_700hPa")
+    cloud = _fb(icon, gfs_data, "cloudcover")
+    precip = _fb(icon, gfs_data, "precipitation")
     bl_h = gfs_data.get("boundary_layer_height")
+    sw_rad = gfs_data.get("shortwave_radiation")
     li = gfs_data.get("lifted_index")
     cin = gfs_data.get("convective_inhibition")
 
@@ -586,6 +629,10 @@ def assess_location(loc_key: str, loc: dict, date: str, sources: list) -> dict:
     lr = None
     if t850 is not None and t700 is not None:
         lr = round(lapse_rate(t850, t700), 1)
+
+    wstar = None
+    if bl_h is not None and sw_rad is not None and t2m is not None:
+        wstar = estimate_wstar(bl_h, sw_rad, t2m)
 
     base_margin = None
     if cloudbase_msl is not None:
@@ -604,6 +651,7 @@ def assess_location(loc_key: str, loc: dict, date: str, sources: list) -> dict:
         "lifted_index": li,
         "boundary_layer_height_m": bl_h,
         "lapse_rate_C_per_km": lr,
+        "wstar_ms": wstar,
         "cloudcover_pct": cloud,
         "precipitation_mm": precip,
     }
@@ -660,6 +708,8 @@ def assess_location(loc_key: str, loc: dict, date: str, sources: list) -> dict:
             positives.append(("LONG_WINDOW", f"{tw['duration_h']}h thermal window"))
         if cloud is not None and cloud < 30:
             positives.append(("CLEAR_SKY", f"{cloud:.0f}%"))
+        if wstar is not None and wstar >= 1.0:
+            positives.append(("GOOD_WSTAR", f"W*={wstar:.1f} m/s (thermal strength)"))
 
     # ── Composite scoring ──
     CRITICAL_TAGS = {"WIND_850", "GUSTS", "PRECIP"}
@@ -759,6 +809,8 @@ def print_triage(results: list, forecast_date: str = ""):
         print(f"     Base: {base} MSL (margin: {margin} over peaks)")
         print(f"     Wind @850hPa: {ws850}  |  Gusts: {gusts_val}")
         print(f"     CAPE: {cape_val}  |  LI: {li_val}  |  Lapse: {lr_val}  |  BL: {bl}")
+        wstar_val = _fv(a.get("wstar_ms"), " m/s", 2)
+        print(f"     W*: {wstar_val}  |  Cloud: {_fv(a.get('cloudcover_pct'), '%', 0)}")
         if tw_h > 0:
             print(f"     Thermal window: {tw_start}–{tw_end} ({tw_h}h)")
         else:
@@ -820,8 +872,8 @@ def generate_markdown_report(results: list, date: str, gen_time: str) -> str:
     # ── Summary table ──
     lines.append("## 📊 Summary")
     lines.append("")
-    lines.append("| Location | Drive | Status | Base @13 | Margin | Wind 850 | Gusts | CAPE | Lapse | BL | Window |")
-    lines.append("|----------|-------|--------|----------|--------|----------|-------|------|-------|----|--------|")
+    lines.append("| Location | Drive | Status | Base @13 | Margin | Wind 850 | Gusts | CAPE | Lapse | BL | W* | Window |")
+    lines.append("|----------|-------|--------|----------|--------|----------|-------|------|-------|----|-----|--------|")
 
     for r in sorted_r:
         a = r.get("assessment", {})
@@ -839,6 +891,7 @@ def generate_markdown_report(results: list, date: str, gen_time: str) -> str:
             f"| {_v(a.get('cape_J_per_kg'),'',0)} "
             f"| {_v(a.get('lapse_rate_C_per_km'),'°C/km')} "
             f"| {_v(a.get('boundary_layer_height_m'),'m',0)} "
+            f"| {_v(a.get('wstar_ms'),'',2)} "
             f"| {tw_str} |"
         )
     lines.append("")
@@ -866,7 +919,8 @@ def generate_markdown_report(results: list, date: str, gen_time: str) -> str:
                      f"**LI**: {_v(a.get('lifted_index'))}  |  "
                      f"**CIN**: {_v(a.get('cin_J_per_kg'),'J/kg',0)}")
         lines.append(f"- **Lapse rate**: {_v(a.get('lapse_rate_C_per_km'),'°C/km')}  |  "
-                     f"**BL height**: {_v(a.get('boundary_layer_height_m'),'m',0)}")
+                     f"**BL height**: {_v(a.get('boundary_layer_height_m'),'m',0)}  |  "
+                     f"**W***: {_v(a.get('wstar_ms'),' m/s',2)}")
         lines.append(f"- **Cloud cover**: {_v(a.get('cloudcover_pct'),'%',0)}  |  "
                      f"**Precip**: {_v(a.get('precipitation_mm'),'mm')}")
         tw_h = a.get("thermal_window_hours", 0)
@@ -893,8 +947,8 @@ def generate_markdown_report(results: list, date: str, gen_time: str) -> str:
         hp = r.get("hourly_analysis", {}).get("hourly_profile", [])
         if hp:
             lines.append("### Hourly Profile")
-            lines.append("| Hour | T | Base MSL | Cloud | Precip | W850 | Gusts | Lapse | BL | CAPE |")
-            lines.append("|------|---|----------|-------|--------|------|-------|-------|----|------|")
+            lines.append("| Hour | T | Base MSL | Cloud | Precip | W850 | Gusts | Lapse | BL | CAPE | W* |")
+            lines.append("|------|---|----------|-------|--------|------|-------|-------|----|------|-----|")
             for h_item in hp:
                 lines.append(
                     f"| {h_item['hour']} "
@@ -906,7 +960,8 @@ def generate_markdown_report(results: list, date: str, gen_time: str) -> str:
                     f"| {_v(h_item['gusts'],'',1)} "
                     f"| {_v(h_item['lapse_rate'],'',1)} "
                     f"| {_v(h_item['bl_height'],'',0)} "
-                    f"| {_v(h_item['cape'],'',0)} |"
+                    f"| {_v(h_item['cape'],'',0)} "
+                    f"| {_v(h_item.get('wstar'),'',2)} |"
                 )
             lines.append("")
 

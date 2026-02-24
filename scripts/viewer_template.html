@@ -38,7 +38,6 @@ h3{font-size:0.95rem;margin:1rem 0 0.3rem;color:var(--muted)}
 .b-UNLIKELY{background:var(--unlikely)}.b-NOGO{background:var(--nogo)}
 .b-NODATA{background:#94a3b8}
 .b-ERROR{background:#6b7280}
-.score{font-size:0.8rem;color:var(--muted);margin-left:0.5rem}
 
 /* Tables */
 table{width:100%;border-collapse:collapse;font-size:0.85rem;margin:0.5rem 0 1rem}
@@ -54,28 +53,9 @@ tr:hover td{background:var(--hover)}
 .sbox{background:var(--card);border-radius:10px;padding:1rem;
   box-shadow:0 1px 3px rgba(0,0,0,.08);margin-bottom:1rem}
 
-/* Cards */
-.card{background:var(--card);border-radius:10px;
-  box-shadow:0 1px 3px rgba(0,0,0,.08),0 1px 2px rgba(0,0,0,.06);
-  margin-bottom:0.75rem;overflow:hidden;border-left:4px solid var(--border)}
-.card.strong{border-left-color:var(--strong)}.card.go{border-left-color:var(--go)}
-.card.maybe{border-left-color:var(--maybe)}.card.unlikely{border-left-color:var(--unlikely)}
-.card.nogo{border-left-color:var(--nogo)}.card.nodata{border-left-color:#94a3b8}.card.error{border-left-color:#6b7280}
-
-details>summary{cursor:pointer;list-style:none;padding:0.75rem 1rem;
-  display:flex;align-items:center;gap:0.75rem;font-weight:600;user-select:none}
+/* Collapsible details */
+details>summary{cursor:pointer;list-style:none;user-select:none}
 details>summary::-webkit-details-marker{display:none}
-details>summary::before{content:'▶';font-size:0.7rem;color:var(--muted);
-  transition:transform 0.2s;flex-shrink:0}
-details[open]>summary::before{transform:rotate(90deg)}
-.cbody{padding:0.75rem 1rem 1rem;border-top:1px solid var(--border)}
-
-/* Metrics grid */
-.metrics{display:grid;grid-template-columns:repeat(auto-fill,minmax(145px,1fr));
-  gap:0.5rem;margin-bottom:0.75rem}
-.metric{background:var(--hover);border-radius:6px;padding:0.4rem 0.6rem}
-.ml{font-size:0.7rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.03em}
-.mv{font-size:1rem;font-weight:600}
 
 /* Flags */
 .flags{margin:0.5rem 0}
@@ -89,15 +69,16 @@ details[open]>summary::before{transform:rotate(90deg)}
 .tw{background:#f0fdf4}
 .tw-peak{background:#dcfce7;font-weight:600}
 
-/* Foehn */
-.foehn{padding:0.6rem 1rem;border-radius:8px;margin:0.75rem 0;font-weight:500}
-.foehn-ok{background:#dcfce7;color:#166534}
-.foehn-warn{background:#fef3c7;color:#92400e}
-.foehn-danger{background:#fee2e2;color:#991b1b}
-
-/* Summary row hover */
+/* Summary row toggle */
 .sum-row{cursor:pointer;transition:background 0.1s}
 .sum-row:hover td{background:#e0f2fe !important}
+.sum-row.expanded td{background:#f0f9ff}
+.arrow{text-align:center;font-size:0.7rem;color:var(--muted);user-select:none;width:1.5em}
+
+/* Detail row (expanded content) */
+.detail-row>td{padding:0 !important;border-bottom:2px solid var(--border)}
+.detail-row .cbody{padding:0.75rem 1rem 1rem;background:var(--hover)}
+.detail-row:hover>td{background:transparent !important}
 
 /* No data */
 .empty{text-align:center;color:var(--muted);padding:3rem;font-size:1.1rem}
@@ -106,7 +87,6 @@ details[open]>summary::before{transform:rotate(90deg)}
 .footer{margin-top:2rem;text-align:center;color:var(--muted);font-size:0.8rem;padding:1rem}
 
 @media(max-width:768px){
-  .metrics{grid-template-columns:repeat(2,1fr)}
   table{font-size:0.78rem}
   th,td{padding:0.3rem}
   .hdr h1{font-size:1.1rem}
@@ -126,7 +106,7 @@ details[open]>summary::before{transform:rotate(90deg)}
 
 <div class="wrap">
   <div id="m"></div>
-  <div class="footer">PG Weather Triage v0.4</div>
+  <div class="footer">PG Weather Triage v0.5</div>
 </div>
 
 <script>
@@ -142,6 +122,7 @@ function fmt(v,u,p){
 }
 function badge(s){return'<span class="badge b-'+((s||'ERROR').replace(/-/g,'').replace(/ /g,''))+'">'+esc(s)+'</span>'}
 
+/* ── Main render ── */
 function render(date){
   const d=R[date];if(!d){document.getElementById('m').innerHTML='<div class="empty">No data</div>';return}
   var forecastDate=d.forecast_date||d.date||date;
@@ -153,121 +134,122 @@ function render(date){
     return(SO[sa]||5)-(SO[sb]||5);
   });
 
-  var h='';
-  h+='<h2>\ud83d\udcc5 Forecast for: '+esc(forecastDate)+'</h2>';
-  h+=renderSummary(locs);
-  h+='<h2>\ud83d\udccd Location Details</h2>';
-  locs.forEach(function(loc){h+=renderCard(loc)});
+  var h='<h2>\ud83d\udcc5 Forecast for: '+esc(forecastDate)+'</h2>';
+  h+=renderRef();
+  h+=renderMainTable(locs);
   document.getElementById('m').innerHTML=h;
 
-  /* Click summary rows to open cards */
+  /* Attach expand/collapse */
   document.querySelectorAll('.sum-row').forEach(function(row){
     row.addEventListener('click',function(){
       var key=this.dataset.key;
-      var det=document.getElementById('card-'+key);
-      if(det){det.open=true;det.scrollIntoView({behavior:'smooth',block:'start'})}
+      var det=document.getElementById('det-'+key);
+      var arrow=this.querySelector('.arrow');
+      if(!det)return;
+      if(det.style.display==='none'){
+        det.style.display='';arrow.textContent='\u25bc';this.classList.add('expanded');
+      }else{
+        det.style.display='none';arrow.textContent='\u25b6';this.classList.remove('expanded');
+      }
     });
   });
 }
 
-function renderSummary(locs){
-  var h='<h2>\ud83d\udcca Quick Overview</h2><div class="sbox"><div class="table-wrap"><table>';
-  h+='<tr><th>Location</th><th>Drive</th><th>Status</th><th>Score</th>';
+/* ── Parameter reference (collapsed above table) ── */
+function renderRef(){
+  var h='<div class="sbox" style="margin-bottom:0.75rem">';
+  h+='<details><summary style="font-size:0.8rem;color:var(--muted);padding:0.3rem 0">';
+  h+='\u2139\ufe0f Parameter Reference &amp; Score</summary>';
+  h+='<div style="font-size:0.75rem;color:var(--muted);margin:0.5rem 0 0;line-height:1.8">';
+  h+='<b>Score</b> \u2014 composite rating. Critical flags (WIND/GUSTS/PRECIP) \u22123 each, LOW_BASE \u22122, quality flags (OVERCAST/STABLE/SHORT_WINDOW) \u22121, danger (HIGH_CAPE/UNSTABLE) \u22121. Each positive +2. ';
+  h+='Thresholds: \u2264\u22125 NO\u2011GO, \u2264\u22122 UNLIKELY, \u22641 MAYBE, \u22644 GO, >4 STRONG.<br>';
+  h+='<b>Base</b> \u2014 cloudbase MSL (m), estimated from T\u2212Td spread at site elevation. <b>Margin</b> \u2014 cloudbase above peak level (m).<br>';
+  h+='<b>W850</b> \u2014 wind at 850\u202fhPa (~1500\u202fm). >5\u202fm/s = closed routes. <b>Gusts</b> \u2014 max 10\u202fm gusts.<br>';
+  h+='<b>CAPE</b> \u2014 Convective Available Potential Energy (J/kg). >300 thermals, >700 strong, >1500 storm risk.<br>';
+  h+='<b>Lapse</b> \u2014 temperature gradient 850\u2192700\u202fhPa (\u00b0C/km). Dry adiabatic = 9.8. >7 strong instability, <5.5 weak thermals.<br>';
+  h+='<b>BL</b> \u2014 Boundary Layer height (m). Max thermal height. > peaks = thermals above summits.<br>';
+  h+='<b>W*</b> \u2014 Deardorff convective velocity (m/s). Thermal strength: <0.5 weak, 0.5\u20131.5 moderate, >1.5 good, >2.5 strong.<br>';
+  h+='<b>LI</b> \u2014 Lifted Index. <0 unstable, <\u22124 storm risk. <b>CIN</b> \u2014 Convective Inhibition (J/kg). <\u221250 suppresses convection.<br>';
+  h+='<b>Window</b> \u2014 thermal hours where W*\u22651.5\u202fm/s, base margin\u22651000\u202fm, no precipitation.';
+  h+='</div></details></div>';
+  return h;
+}
+
+/* ── Main table with expandable detail rows ── */
+function renderMainTable(locs){
+  var NC=17;
+  var h='<div class="sbox"><div class="table-wrap"><table>';
+  h+='<thead><tr>';
+  h+='<th style="width:1.5em"></th>';
+  h+='<th>Location</th><th>Drive</th><th>Status</th><th class="n">Score</th>';
   h+='<th class="n">Base, m</th><th class="n">Margin, m</th>';
-  h+='<th class="n">W850, m/s</th><th class="n">Gusts, m/s</th>';
-  h+='<th class="n">CAPE<sup>1</sup></th><th class="n">Lapse<sup>2</sup></th>';
-  h+='<th class="n">BL<sup>3</sup>, m</th><th>Window</th></tr>';
+  h+='<th class="n">W850</th><th class="n">Gusts</th>';
+  h+='<th class="n">CAPE</th><th class="n">Lapse</th>';
+  h+='<th class="n">BL, m</th><th class="n">W*</th>';
+  h+='<th class="n">Cloud %</th><th class="n">LI</th><th class="n">Precip</th>';
+  h+='<th>Window</th>';
+  h+='</tr></thead>';
 
   locs.forEach(function(r){
     var a=r.assessment||{};
     var twh=a.thermal_window_hours||0;
-    var tw=twh>0?(a.thermal_window_start+'\u2013'+a.thermal_window_end):'\u2014';
+    var tw=twh>0?(a.thermal_window_start+'\u2013'+a.thermal_window_end+' ('+twh+'h)'):'\u2014';
+
+    /* Summary row */
     h+='<tr class="sum-row" data-key="'+(r.key||'')+'">';
+    h+='<td class="arrow">\u25b6</td>';
     h+='<td><strong>'+esc(r.location)+'</strong></td>';
     h+='<td>'+fmt(r.drive_h,'h')+'</td>';
     h+='<td>'+badge(a.status)+'</td>';
     h+='<td class="n">'+(a.score!=null?a.score:'\u2014')+'</td>';
-    h+='<td class="n">'+fmt(a.cloudbase_msl,'m',0)+'</td>';
-    h+='<td class="n">'+fmt(a.base_margin_over_peaks,'m',0)+'</td>';
+    h+='<td class="n">'+fmt(a.cloudbase_msl,'',0)+'</td>';
+    h+='<td class="n">'+fmt(a.base_margin_over_peaks,'',0)+'</td>';
     h+='<td class="n">'+fmt(a.wind_850hPa_ms,'',1)+'</td>';
     h+='<td class="n">'+fmt(a.gusts_10m_ms,'',1)+'</td>';
-    h+='<td class="n">'+fmt(a.cape_J_per_kg,' J/kg',0)+'</td>';
-    h+='<td class="n">'+fmt(a.lapse_rate_C_per_km,' °C/km',1)+'</td>';
+    h+='<td class="n">'+fmt(a.cape_J_per_kg,'',0)+'</td>';
+    h+='<td class="n">'+fmt(a.lapse_rate_C_per_km,'',1)+'</td>';
     h+='<td class="n">'+fmt(a.boundary_layer_height_m,'',0)+'</td>';
+    h+='<td class="n">'+fmt(a.wstar_ms,'',2)+'</td>';
+    h+='<td class="n">'+fmt(a.cloudcover_pct,'',0)+'</td>';
+    h+='<td class="n">'+fmt(a.lifted_index)+'</td>';
+    h+='<td class="n">'+fmt(a.precipitation_mm,'',1)+'</td>';
     h+='<td>'+tw+'</td>';
     h+='</tr>';
+
+    /* Detail row (collapsed by default) */
+    h+='<tr id="det-'+(r.key||'')+'" class="detail-row" style="display:none">';
+    h+='<td colspan="'+NC+'"><div class="cbody">';
+    h+=renderCardBody(r);
+    h+='</div></td></tr>';
   });
 
-  h+='</table></div>';
-  h+='<div style="font-size:0.75rem;color:var(--muted);margin:0.3rem 0 0.5rem">';
-  h+='<sup>1</sup> CAPE — Convective Available Potential Energy, J/kg. >300 хорошо, >700 сильно, >1500 риск гроз &nbsp;';
-  h+='<sup>2</sup> Lapse — градиент температуры 850\u2192700 hPa, \u00b0C/km. >7 сильная нестабильность &nbsp;';
-  h+='<sup>3</sup> BL — Boundary Layer height (высота погранслоя), m. >пиков = термики выше вершин';
-  h+='</div></div>';
+  h+='</table></div></div>';
   return h;
 }
-function renderCard(r){
+
+/* ── Card body (expanded detail content) ── */
+function renderCardBody(r){
   var a=r.assessment||{};
-  var s=a.status||'ERROR';
-  var cls=SC[s]||'error';
-  var isOpen=['STRONG','GO','MAYBE'].indexOf(s)>=0;
+  var h='';
 
-  var h='<div class="card '+cls+'">';
-  h+='<details id="card-'+(r.key||'')+'"'+(isOpen?' open':'')+'>';
-  h+='<summary>'+badge(s)+' <span>'+esc(r.location)+'</span> ';
-  h+='<span class="score">score: '+(a.score!=null?a.score:'?')+' \u00b7 '+fmt(r.drive_h,'h')+' from Munich</span></summary>';
-  h+='<div class="cbody">';
-
-  /* Error state */
-  if(r.error){
-    h+='<p style="color:var(--nogo)">Error: '+esc(r.error)+'</p>';
-    h+='</div></details></div>';
-    return h;
-  }
-
-  /* Metrics grid */
-  h+='<div class="metrics">';
-  var metrics=[
-    ['Base MSL',fmt(a.cloudbase_msl,'m',0)],
-    ['Margin',fmt(a.base_margin_over_peaks,'m',0)],
-    ['Wind 850',fmt(a.wind_850hPa_ms,' m/s')],
-    ['Wind 700',fmt(a.wind_700hPa_ms,' m/s')],
-    ['Gusts',fmt(a.gusts_10m_ms,' m/s')],
-    ['CAPE',fmt(a.cape_J_per_kg,' J/kg',0)],
-    ['LI',fmt(a.lifted_index)],
-    ['Lapse',fmt(a.lapse_rate_C_per_km,' \u00b0C/km')],
-    ['BL height',fmt(a.boundary_layer_height_m,'m',0)],
-    ['Cloud',fmt(a.cloudcover_pct,'%',0)],
-    ['Precip',fmt(a.precipitation_mm,' mm')],
-  ];
-  var twh=a.thermal_window_hours||0;
-  metrics.push(['Window',twh>0?
-    a.thermal_window_start+'\u2013'+a.thermal_window_end+' ('+twh+'h)':'\u2014']);
-
-  metrics.forEach(function(m){
-    h+='<div class="metric"><div class="ml">'+esc(m[0])+'</div><div class="mv">'+m[1]+'</div></div>';
-  });
-  h+='</div>';
+  if(r.error){return'<p style="color:var(--nogo)">Error: '+esc(r.error)+'</p>';}
 
   /* Flags */
   var flags=a.flags||[],pos=a.positives||[];
   if(flags.length||pos.length){
     h+='<div class="flags">';
-    flags.forEach(function(f){
-      h+='<div class="fl fw"><strong>'+esc(f.tag)+'</strong>: '+esc(f.msg)+'</div>';
-    });
-    pos.forEach(function(p){
-      h+='<div class="fl fg"><strong>'+esc(p.tag)+'</strong>: '+esc(p.msg)+'</div>';
-    });
+    flags.forEach(function(f){h+='<div class="fl fw"><strong>'+esc(f.tag)+'</strong>: '+esc(f.msg)+'</div>'});
+    pos.forEach(function(p){h+='<div class="fl fg"><strong>'+esc(p.tag)+'</strong>: '+esc(p.msg)+'</div>'});
     h+='</div>';
   }
 
   /* Hourly profile */
   var hp=(r.hourly_analysis||{}).hourly_profile||[];
   if(hp.length){
-    h+='<h3>Hourly Profile</h3><div class="table-wrap"><table class="htbl">';
-    h+='<tr><th>Hour</th><th>T</th><th>Dew</th><th>Base</th><th>Cloud</th><th>Precip</th>';
-    h+='<th>W850</th><th>Gusts</th><th>Lapse</th><th>BL</th><th>CAPE</th></tr>';
+    h+='<h3>Hourly Profile <span style="font-weight:400;font-size:0.75rem;color:var(--muted)">(ICON-D2 \u2192 GFS fallback \u00b7 BL/CAPE/W* from GFS)</span></h3>';
+    h+='<div class="table-wrap"><table class="htbl">';
+    h+='<tr><th>Hour</th><th>T, \u00b0C</th><th>Dew, \u00b0C</th><th>Base, m</th><th>Cloud, %</th><th>Precip, mm</th>';
+    h+='<th>W850, m/s</th><th>Gusts, m/s</th><th>Lapse, \u00b0C/km</th><th>BL, m</th><th>CAPE, J/kg</th><th>W*, m/s</th></tr>';
 
     var tws=a.thermal_window_start,twe=a.thermal_window_end,twp=a.thermal_window_peak;
     var twsI=tws?parseInt(tws):99,tweI=twe?parseInt(twe):-1;
@@ -278,16 +260,18 @@ function renderCard(r){
       if(hrI>=twsI&&hrI<=tweI){cls=item.hour===twp?' class="tw-peak"':' class="tw"'}
       h+='<tr'+cls+'>';
       h+='<td><strong>'+item.hour+'</strong></td>';
-      h+='<td>'+fmt(item.temp_2m,'\u00b0',1)+'</td>';
-      h+='<td>'+fmt(item.dewpoint,'\u00b0',1)+'</td>';
+      h+='<td>'+fmt(item.temp_2m,'',1)+'</td>';
+      h+='<td>'+fmt(item.dewpoint,'',1)+'</td>';
       h+='<td>'+fmt(item.cloudbase_msl,'',0)+'</td>';
-      h+='<td>'+fmt(item.cloudcover,'%',0)+'</td>';
+      h+='<td>'+fmt(item.cloudcover,'',0)+'</td>';
       h+='<td>'+fmt(item.precipitation,'',1)+'</td>';
       h+='<td>'+fmt(item.wind_850,'',1)+'</td>';
       h+='<td>'+fmt(item.gusts,'',1)+'</td>';
       h+='<td>'+fmt(item.lapse_rate,'',1)+'</td>';
       h+='<td>'+fmt(item.bl_height,'',0)+'</td>';
       h+='<td>'+fmt(item.cape,'',0)+'</td>';
+      var ws=item.wstar;
+      h+='<td'+(ws!=null&&ws>=1.0?' style="color:var(--go);font-weight:600"':'')+'>'+fmt(ws,'',2)+'</td>';
       h+='</tr>';
     });
     h+='</table></div>';
@@ -319,12 +303,12 @@ function renderCard(r){
   /* Model comparison */
   var mm=((r.sources||{}).multimodel||{}).at_13||{};
   if(Object.keys(mm).length){
-    h+='<h3>Model Comparison @13:00</h3><table>';
-    h+='<tr><th>Parameter</th><th>ICON</th><th>GFS</th><th>ECMWF</th></tr>';
+    h+='<h3>Model Comparison @13:00</h3><table style="text-align:center">';
+    h+='<tr><th style="text-align:left">Parameter</th><th style="text-align:center">ICON</th><th style="text-align:center">GFS</th><th style="text-align:center">ECMWF</th></tr>';
     var models=['icon_seamless','gfs_seamless','ecmwf_ifs025'];
     ['temperature_2m','dewpoint_2m','cape','cloudcover','windspeed_10m','windgusts_10m','precipitation'].forEach(function(pb){
-      h+='<tr><td><strong>'+esc(pb)+'</strong></td>';
-      h+=models.map(function(m){return'<td class="n">'+fmt(mm[pb+'_'+m])+'</td>'}).join('');
+      h+='<tr><td style="text-align:left"><strong>'+esc(pb)+'</strong></td>';
+      h+=models.map(function(m){return'<td style="text-align:center">'+fmt(mm[pb+'_'+m])+'</td>'}).join('');
       h+='</tr>';
     });
     h+='</table>';
@@ -343,22 +327,18 @@ function renderCard(r){
     if(mpAvail.length){
       h+='<div class="table-wrap"><table class="htbl">';
       h+='<tr><th>Param</th>'+mpAvail.map(function(hr){return'<th>'+hr+'</th>'}).join('')+'</tr>';
-      /* PBL height */
       h+='<tr><td><strong>PBL height</strong></td>';
       h+=mpAvail.map(function(hr){return'<td>'+fmt(mpHours[hr].pblh,'m',0)+'</td>'}).join('');
       h+='</tr>';
-      /* Cloud low/mid/high */
       ['cfracl','cfracm','cfrach'].forEach(function(p){
         var label={cfracl:'Cloud low%',cfracm:'Cloud mid%',cfrach:'Cloud high%'}[p];
         h+='<tr><td><strong>'+label+'</strong></td>';
         h+=mpAvail.map(function(hr){return'<td>'+fmt(mpHours[hr][p],'%',0)+'</td>'}).join('');
         h+='</tr>';
       });
-      /* Rain */
       h+='<tr><td><strong>Rain mm</strong></td>';
       h+=mpAvail.map(function(hr){return'<td>'+fmt(mpHours[hr].raintot,'',1)+'</td>'}).join('');
       h+='</tr>';
-      /* Max thermal strength */
       h+='<tr><td><strong>Max thermal m/s</strong></td>';
       h+=mpAvail.map(function(hr){
         var ths=mpHours[hr].ths||[];
@@ -366,7 +346,6 @@ function renderCard(r){
         return'<td'+(mx>=0.5?' style="color:var(--go);font-weight:600"':'')+'>'+mx.toFixed(2)+'</td>';
       }).join('');
       h+='</tr>';
-      /* Thermal top (height where ths > 0.1) */
       h+='<tr><td><strong>Thermal top m</strong></td>';
       h+=mpAvail.map(function(hr){
         var ths=mpHours[hr].ths||[];var z=mpHours[hr].z||[];
@@ -395,18 +374,16 @@ function renderCard(r){
     h+='<h3>\u2708\ufe0f XContest: no flights nearby</h3>';
   }
 
-  h+='</div></details></div>';
   return h;
 }
 
-/* Init */
+/* ── Init ── */
 (function(){
   var dates=Object.keys(R).sort().reverse();
   var sel=document.getElementById('ds');
   dates.forEach(function(d){
     var opt=document.createElement('option');
     opt.value=d;
-    /* Show "Forecast: YYYY-MM-DD (generated HH:MM)" */
     var rd=R[d]||{};
     var fc=rd.forecast_date||rd.date||d;
     var gt=rd.generated_at||'';
