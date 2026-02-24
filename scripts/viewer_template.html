@@ -36,14 +36,15 @@ h3{font-size:0.95rem;margin:1rem 0 0.3rem;color:var(--muted)}
 .b-STRONG{background:var(--strong)}.b-GO{background:var(--go)}
 .b-MAYBE{background:var(--maybe);color:#422006}
 .b-UNLIKELY{background:var(--unlikely)}.b-NOGO{background:var(--nogo)}
+.b-NODATA{background:#94a3b8}
 .b-ERROR{background:#6b7280}
 .score{font-size:0.8rem;color:var(--muted);margin-left:0.5rem}
 
 /* Tables */
 table{width:100%;border-collapse:collapse;font-size:0.85rem;margin:0.5rem 0 1rem}
 th{background:var(--border);padding:0.45rem 0.5rem;text-align:left;font-weight:600;
-  position:sticky;top:0}
-td{padding:0.4rem 0.5rem;border-bottom:1px solid var(--border)}
+  position:sticky;top:0;white-space:nowrap}
+td{padding:0.4rem 0.5rem;border-bottom:1px solid var(--border);white-space:nowrap}
 tr:hover td{background:var(--hover)}
 .n{text-align:right;font-variant-numeric:tabular-nums}
 .na{color:var(--muted)}
@@ -59,7 +60,7 @@ tr:hover td{background:var(--hover)}
   margin-bottom:0.75rem;overflow:hidden;border-left:4px solid var(--border)}
 .card.strong{border-left-color:var(--strong)}.card.go{border-left-color:var(--go)}
 .card.maybe{border-left-color:var(--maybe)}.card.unlikely{border-left-color:var(--unlikely)}
-.card.nogo{border-left-color:var(--nogo)}.card.error{border-left-color:#6b7280}
+.card.nogo{border-left-color:var(--nogo)}.card.nodata{border-left-color:#94a3b8}.card.error{border-left-color:#6b7280}
 
 details>summary{cursor:pointer;list-style:none;padding:0.75rem 1rem;
   display:flex;align-items:center;gap:0.75rem;font-weight:600;user-select:none}
@@ -130,8 +131,8 @@ details[open]>summary::before{transform:rotate(90deg)}
 
 <script>
 const R = __REPORTS_DATA__;
-const SO = {STRONG:0,GO:1,MAYBE:2,UNLIKELY:3,'NO-GO':4,ERROR:5};
-const SC = {STRONG:'strong',GO:'go',MAYBE:'maybe',UNLIKELY:'unlikely','NO-GO':'nogo',ERROR:'error'};
+const SO = {STRONG:0,GO:1,MAYBE:2,UNLIKELY:3,'NO-GO':4,'NO DATA':5,ERROR:6};
+const SC = {STRONG:'strong',GO:'go',MAYBE:'maybe',UNLIKELY:'unlikely','NO-GO':'nogo','NO DATA':'nodata',ERROR:'error'};
 
 function esc(t){if(t==null)return'';return String(t).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}
 function fmt(v,u,p){
@@ -139,7 +140,7 @@ function fmt(v,u,p){
   if(typeof v==='number'){p=p!=null?p:1;return v.toFixed(p)+(u||'')}
   return String(v)+(u||'');
 }
-function badge(s){return'<span class="badge b-'+((s||'ERROR').replace('-',''))+'">'+esc(s)+'</span>'}
+function badge(s){return'<span class="badge b-'+((s||'ERROR').replace(/-/g,'').replace(/ /g,''))+'">'+esc(s)+'</span>'}
 
 function render(date){
   const d=R[date];if(!d){document.getElementById('m').innerHTML='<div class="empty">No data</div>';return}
@@ -172,10 +173,10 @@ function render(date){
 function renderSummary(locs){
   var h='<h2>\ud83d\udcca Quick Overview</h2><div class="sbox"><div class="table-wrap"><table>';
   h+='<tr><th>Location</th><th>Drive</th><th>Status</th><th>Score</th>';
-  h+='<th class="n">Base</th><th class="n">Margin</th>';
-  h+='<th class="n">W850</th><th class="n">Gusts</th>';
-  h+='<th class="n">CAPE</th><th class="n">Lapse</th>';
-  h+='<th class="n">BL</th><th>Window</th></tr>';
+  h+='<th class="n">Base, m</th><th class="n">Margin, m</th>';
+  h+='<th class="n">W850, m/s</th><th class="n">Gusts, m/s</th>';
+  h+='<th class="n">CAPE<sup>1</sup></th><th class="n">Lapse<sup>2</sup></th>';
+  h+='<th class="n">BL<sup>3</sup>, m</th><th>Window</th></tr>';
 
   locs.forEach(function(r){
     var a=r.assessment||{};
@@ -190,14 +191,19 @@ function renderSummary(locs){
     h+='<td class="n">'+fmt(a.base_margin_over_peaks,'m',0)+'</td>';
     h+='<td class="n">'+fmt(a.wind_850hPa_ms,'',1)+'</td>';
     h+='<td class="n">'+fmt(a.gusts_10m_ms,'',1)+'</td>';
-    h+='<td class="n">'+fmt(a.cape_J_per_kg,'',0)+'</td>';
-    h+='<td class="n">'+fmt(a.lapse_rate_C_per_km,'',1)+'</td>';
+    h+='<td class="n">'+fmt(a.cape_J_per_kg,' J/kg',0)+'</td>';
+    h+='<td class="n">'+fmt(a.lapse_rate_C_per_km,' °C/km',1)+'</td>';
     h+='<td class="n">'+fmt(a.boundary_layer_height_m,'',0)+'</td>';
     h+='<td>'+tw+'</td>';
     h+='</tr>';
   });
 
-  h+='</table></div></div>';
+  h+='</table></div>';
+  h+='<div style="font-size:0.75rem;color:var(--muted);margin:0.3rem 0 0.5rem">';
+  h+='<sup>1</sup> CAPE — Convective Available Potential Energy, J/kg. >300 хорошо, >700 сильно, >1500 риск гроз &nbsp;';
+  h+='<sup>2</sup> Lapse — градиент температуры 850\u2192700 hPa, \u00b0C/km. >7 сильная нестабильность &nbsp;';
+  h+='<sup>3</sup> BL — Boundary Layer height (высота погранслоя), m. >пиков = термики выше вершин';
+  h+='</div></div>';
   return h;
 }
 function renderCard(r){

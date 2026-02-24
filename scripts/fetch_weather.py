@@ -386,6 +386,11 @@ def analyze_hourly_window(hourly_icon: dict, hourly_gfs: dict, loc: dict) -> dic
         h = int(p["hour"].split(":")[0])
         if h < 9:
             continue
+        # Require at least SOME data to consider as thermal hour
+        has_data = any(p.get(k) is not None for k in
+                       ("temp_2m", "cloudcover", "precipitation", "wind_850"))
+        if not has_data:
+            continue
         is_thermal = True
         if p["cloudcover"] is not None and p["cloudcover"] > 70:
             is_thermal = False
@@ -631,24 +636,34 @@ def assess_location(loc_key: str, loc: dict, date: str, sources: list) -> dict:
     if tw.get("duration_h", 0) > 0 and tw["duration_h"] < 5:
         flags.append(("SHORT_WINDOW", f"thermal window {tw['duration_h']}h < 5h"))
 
+    # ── Недостаточно данных? ──
+    key_values = [t2m, ws850, cape, cloud, precip]
+    n_available = sum(1 for v in key_values if v is not None)
+    insufficient_data = n_available < 2  # need at least 2 of 5 key params
+
+    if insufficient_data:
+        flags.append(("INSUFFICIENT_DATA",
+                      f"Only {n_available}/5 key params available (no reliable assessment)"))
+
     # ── Позитивные признаки ──
     positives = []
-    if lr is not None and lr > 7.0:
-        positives.append(("STRONG_LAPSE", f"{lr}°C/km"))
-    if cape is not None and 300 < cape < 1500:
-        positives.append(("GOOD_CAPE", f"{cape} J/kg"))
-    if bl_h is not None and bl_h > 1500:
-        positives.append(("DEEP_BL", f"{bl_h}m"))
-    if cloudbase_msl is not None and base_margin is not None and base_margin > 1500:
-        positives.append(("HIGH_BASE", f"{cloudbase_msl}m MSL (+{base_margin}m over peaks)"))
-    if tw.get("duration_h", 0) >= 7:
-        positives.append(("LONG_WINDOW", f"{tw['duration_h']}h thermal window"))
-    if cloud is not None and cloud < 30:
-        positives.append(("CLEAR_SKY", f"{cloud:.0f}%"))
+    if not insufficient_data:
+        if lr is not None and lr > 7.0:
+            positives.append(("STRONG_LAPSE", f"{lr}°C/km"))
+        if cape is not None and 300 < cape < 1500:
+            positives.append(("GOOD_CAPE", f"{cape} J/kg"))
+        if bl_h is not None and bl_h > 1500:
+            positives.append(("DEEP_BL", f"{bl_h}m"))
+        if cloudbase_msl is not None and base_margin is not None and base_margin > 1500:
+            positives.append(("HIGH_BASE", f"{cloudbase_msl}m MSL (+{base_margin}m over peaks)"))
+        if tw.get("duration_h", 0) >= 7:
+            positives.append(("LONG_WINDOW", f"{tw['duration_h']}h thermal window"))
+        if cloud is not None and cloud < 30:
+            positives.append(("CLEAR_SKY", f"{cloud:.0f}%"))
 
     # ── Composite scoring ──
     CRITICAL_TAGS = {"WIND_850", "GUSTS", "PRECIP"}
-    QUALITY_TAGS = {"OVERCAST", "STABLE", "SHORT_WINDOW"}
+    QUALITY_TAGS = {"OVERCAST", "STABLE", "SHORT_WINDOW", "INSUFFICIENT_DATA"}
 
     n_critical = sum(1 for tag, _ in flags if tag in CRITICAL_TAGS)
     n_quality = sum(1 for tag, _ in flags if tag in QUALITY_TAGS)
@@ -679,6 +694,9 @@ def assess_location(loc_key: str, loc: dict, date: str, sources: list) -> dict:
     elif n_critical >= 1 and status in ("GO", "STRONG"):
         status = "MAYBE"
 
+    if insufficient_data:
+        status = "NO DATA"
+
     assessment["flags"] = [{"tag": t, "msg": m} for t, m in flags]
     assessment["positives"] = [{"tag": t, "msg": m} for t, m in positives]
     assessment["score"] = score
@@ -694,10 +712,10 @@ def assess_location(loc_key: str, loc: dict, date: str, sources: list) -> dict:
 
 STATUS_EMOJI = {
     "NO-GO": "🔴", "UNLIKELY": "🟠", "MAYBE": "🟡",
-    "GO": "🟢", "STRONG": "💚",
+    "GO": "🟢", "STRONG": "💚", "NO DATA": "⚪",
 }
 
-STATUS_ORDER = {"STRONG": 0, "GO": 1, "MAYBE": 2, "UNLIKELY": 3, "NO-GO": 4}
+STATUS_ORDER = {"STRONG": 0, "GO": 1, "MAYBE": 2, "UNLIKELY": 3, "NO-GO": 4, "NO DATA": 5}
 
 
 def print_triage(results: list, forecast_date: str = ""):
@@ -716,14 +734,21 @@ def print_triage(results: list, forecast_date: str = ""):
             continue
 
         status = a.get("status", "?")
-        base = a.get("cloudbase_msl", "?")
-        margin = a.get("base_margin_over_peaks", "?")
-        ws850 = a.get("wind_850hPa_ms", "?")
-        gusts_val = a.get("gusts_10m_ms", "?")
-        cape_val = a.get("cape_J_per_kg", "?")
-        lr_val = a.get("lapse_rate_C_per_km", "?")
-        bl = a.get("boundary_layer_height_m", "?")
-        li_val = a.get("lifted_index", "?")
+        def _fv(v, unit="", prec=None):
+            """Format value for console: None→'—', number→formatted."""
+            if v is None:
+                return "—"
+            if isinstance(v, (int, float)) and prec is not None:
+                return f"{v:.{prec}f}{unit}"
+            return f"{v}{unit}"
+        base = _fv(a.get("cloudbase_msl"), " m", 0)
+        margin = _fv(a.get("base_margin_over_peaks"), " m", 0)
+        ws850 = _fv(a.get("wind_850hPa_ms"), " m/s", 1)
+        gusts_val = _fv(a.get("gusts_10m_ms"), " m/s", 1)
+        cape_val = _fv(a.get("cape_J_per_kg"), " J/kg", 0)
+        lr_val = _fv(a.get("lapse_rate_C_per_km"), " °C/km", 1)
+        bl = _fv(a.get("boundary_layer_height_m"), " m", 0)
+        li_val = _fv(a.get("lifted_index"))
         tw_start = a.get("thermal_window_start", "—")
         tw_end = a.get("thermal_window_end", "—")
         tw_h = a.get("thermal_window_hours", 0)
@@ -731,9 +756,9 @@ def print_triage(results: list, forecast_date: str = ""):
         emoji = STATUS_EMOJI.get(status, "⚪")
 
         print(f"\n  {emoji} {r['location']:15s} [{status}]  (score: {a.get('score', '?')})")
-        print(f"     Base: {base}m MSL (margin: {margin}m over peaks)")
-        print(f"     Wind @850hPa: {ws850}m/s  |  Gusts: {gusts_val}m/s")
-        print(f"     CAPE: {cape_val}J/kg  |  LI: {li_val}  |  Lapse: {lr_val}°C/km  |  BL: {bl}m")
+        print(f"     Base: {base} MSL (margin: {margin} over peaks)")
+        print(f"     Wind @850hPa: {ws850}  |  Gusts: {gusts_val}")
+        print(f"     CAPE: {cape_val}  |  LI: {li_val}  |  Lapse: {lr_val}  |  BL: {bl}")
         if tw_h > 0:
             print(f"     Thermal window: {tw_start}–{tw_end} ({tw_h}h)")
         else:
