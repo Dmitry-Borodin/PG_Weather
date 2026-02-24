@@ -54,13 +54,21 @@ LOCATIONS="${2:-all}"
 SOURCES="${3:-all}"
 HEADLESS="${4:-meteo_parapente}"
 
-# Build if image doesn't exist or Dockerfile changed
-if ! docker image inspect "$IMAGE_NAME" &>/dev/null || \
-   [[ "$(docker inspect --format='{{.Created}}' "$IMAGE_NAME" 2>/dev/null)" < \
-      "$(stat -c %Y Dockerfile 2>/dev/null || stat -f %m Dockerfile)" ]]; then
-    echo "Building Docker image..."
-    docker build -t "$IMAGE_NAME" .
+# Docker preflight checks
+if ! command -v docker >/dev/null 2>&1; then
+    echo "Docker is not installed or not in PATH."
+    echo "Use local mode instead: ./run.sh --local [DATE] [LOCATIONS] [SOURCES]"
+    exit 127
 fi
+
+if ! docker info >/dev/null 2>&1; then
+    echo "Docker daemon is not reachable."
+    echo "Start Docker Desktop/daemon, or use local mode: ./run.sh --local"
+    exit 1
+fi
+
+echo "Building Docker image..."
+DOCKER_BUILDKIT=1 docker build -t "$IMAGE_NAME" .
 
 mkdir -p reports
 
