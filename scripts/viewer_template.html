@@ -56,6 +56,44 @@ tr:hover td{background:var(--hover)}
 /* Collapsible details */
 details>summary{cursor:pointer;list-style:none;user-select:none}
 details>summary::-webkit-details-marker{display:none}
+.ref-summary{
+  font-size:0.82rem;color:var(--muted);padding:0.35rem 0;
+  display:flex;align-items:center;justify-content:space-between;gap:0.8rem
+}
+.ref-title{display:inline-flex;align-items:center;gap:0.58rem}
+.ref-arrow::before{content:'\25be';font-size:0.82rem;color:var(--muted)}
+.ref-details[open] .ref-arrow::before{content:'\25b4'}
+
+/* Source annotations */
+.src-row th{
+  font-size:0.68rem;font-weight:500;color:var(--muted);background:#f8fafc;
+  border-top:1px solid #dbe6f5;padding:0.18rem 0.35rem;position:static
+}
+.src-note{font-size:0.72rem;line-height:1.5;color:var(--muted);margin-top:0.2rem}
+.sv{
+  display:inline-block;margin-left:0.28rem;padding:0 0.26rem;border-radius:4px;
+  border:1px solid #cbd5e1;background:#f8fafc;color:#475569;font-size:0.62rem;line-height:1.35;vertical-align:middle
+}
+.sv-legend{font-size:0.7rem;color:var(--muted);margin-top:0.35rem;line-height:1.5}
+.model-pill{
+  display:inline-block;padding:0.12rem 0.42rem;border-radius:999px;
+  border:1px solid #bfdbfe;background:#eff6ff;color:#1e3a8a;font-size:0.69rem;font-weight:600
+}
+
+/* Expanded metrics */
+.metrics{
+  display:grid;grid-template-columns:repeat(auto-fill,minmax(168px,1fr));
+  gap:0.55rem;margin-bottom:0.65rem
+}
+.metric{background:#ffffff;border:1px solid var(--border);border-radius:8px;padding:0.45rem 0.6rem}
+.ml{font-size:0.69rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.03em}
+.mv{font-size:1.05rem;font-weight:600;line-height:1.2;margin-top:0.1rem}
+.ms{font-size:0.66rem;color:var(--muted);line-height:1.3;margin-top:0.12rem}
+.used-models{background:#eef6ff;border:1px solid #dbeafe;border-radius:8px;padding:0.55rem 0.65rem;margin:0.55rem 0 0.75rem}
+.used-title{font-size:0.78rem;font-weight:600;color:#1e3a8a;margin-bottom:0.35rem}
+.used-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:0.3rem 0.7rem}
+.used-item{font-size:0.72rem;color:#334155}
+.used-item strong{font-weight:600;color:#1e293b}
 
 /* Flags */
 .flags{margin:0.5rem 0}
@@ -73,7 +111,7 @@ details>summary::-webkit-details-marker{display:none}
 .sum-row{cursor:pointer;transition:background 0.1s}
 .sum-row:hover td{background:#e0f2fe !important}
 .sum-row.expanded td{background:#f0f9ff}
-.arrow{text-align:center;font-size:0.7rem;color:var(--muted);user-select:none;width:1.5em}
+.arrow{text-align:center;font-size:0.9rem;color:var(--muted);user-select:none;width:2em}
 
 /* Detail row (expanded content) */
 .detail-row>td{padding:0 !important;border-bottom:2px solid var(--border)}
@@ -121,6 +159,194 @@ function fmt(v,u,p){
   return String(v)+(u||'');
 }
 function badge(s){return'<span class="badge b-'+((s||'ERROR').replace(/-/g,'').replace(/ /g,''))+'">'+esc(s)+'</span>'}
+const MODEL_META={
+  icon_d2:{name:'ICON-D2',step:'2 km',provider:'Open-Meteo dwd-icon',short:'I2'},
+  gfs_seamless:{name:'GFS',step:'global',provider:'Open-Meteo gfs',short:'GFS'},
+  icon_seamless:{name:'ICON (multi-model blend)',step:'Open-Meteo forecast blend',provider:'Open-Meteo forecast',short:'ICON*'},
+  ecmwf_ifs025:{name:'ECMWF IFS',step:'0.25°',provider:'Open-Meteo forecast',short:'E25'},
+  mosmix_l:{name:'DWD MOSMIX_L',step:'station MOS',provider:'DWD OpenData',short:'MOS'},
+};
+const MOSMIX_PARAM_HELP={
+  TTT:'Температура воздуха на 2 м, °C',
+  Td:'Точка росы на 2 м, °C',
+  FF:'Средняя скорость ветра 10 м, m/s',
+  FX1:'Максимальный порыв за 1 час, m/s',
+  DD:'Направление ветра, °',
+  N:'Общая облачность, %',
+  Neff:'Эффективная облачность, %',
+  Nh:'Высокая облачность, %',
+  Nm:'Средняя облачность, %',
+  Nl:'Низкая облачность, %',
+  PPPP:'Давление на уровне моря, hPa',
+  SunD1:'Длительность солнечного сияния за 1 час, s',
+  Rad1h:'Суммарная радиация за 1 час, kJ/m²',
+  RR1c:'Осадки за 1 час, mm',
+  wwP:'Вероятность погодного явления, %',
+  R101:'Вероятность осадков >0.1 mm, %',
+};
+function hasV(v){return v!==null&&v!==undefined}
+function uniq(arr){return Array.from(new Set(arr.filter(Boolean)))}
+function modelLabelById(modelId){
+  var m=MODEL_META[(modelId||'').toLowerCase()];
+  if(!m)return modelId||'\u2014';
+  return m.name+' ['+m.step+']';
+}
+function modelShortById(modelId){
+  var m=MODEL_META[(modelId||'').toLowerCase()];
+  return m?m.short:(modelId||'\u2014');
+}
+function idsToLabel(ids){
+  var u=uniq(ids||[]);
+  if(!u.length)return '\u2014';
+  return u.map(modelLabelById).join(' + ');
+}
+function idsToShort(ids){
+  var u=uniq(ids||[]);
+  if(!u.length)return '\u2014';
+  return u.map(modelShortById).join('+');
+}
+function at13Icon(r){return (((r.sources||{}).icon_d2||{}).at_13)||{}}
+function at13Gfs(r){return (((r.sources||{}).gfs||{}).at_13)||{}}
+function sourceIdForAt13Key(r,key){
+  var icon=((r.sources||{}).icon_d2||{}).at_13||{};
+  var gfs=((r.sources||{}).gfs||{}).at_13||{};
+  if(hasV(icon[key]))return 'icon_d2';
+  if(hasV(gfs[key]))return 'gfs_seamless';
+  return null;
+}
+function sourceIdsForAt13Key(r,key){
+  var id=sourceIdForAt13Key(r,key);
+  return id?[id]:[];
+}
+function sourceIdsForCloudBase(r){
+  return uniq([sourceIdForAt13Key(r,'temperature_2m'),sourceIdForAt13Key(r,'dewpoint_2m')]);
+}
+function sourceIdsForLapse(r){
+  return uniq([sourceIdForAt13Key(r,'temperature_850hPa'),sourceIdForAt13Key(r,'temperature_700hPa')]);
+}
+function sourceIdsForBlLiCin(r){
+  var gfs=at13Gfs(r);
+  if(hasV(gfs.boundary_layer_height)||hasV(gfs.lifted_index)||hasV(gfs.convective_inhibition))return ['gfs_seamless'];
+  return [];
+}
+function sourceIdsForWstar(r){
+  var gfs=at13Gfs(r);
+  if(!hasV(gfs.boundary_layer_height)||!hasV(gfs.shortwave_radiation))return [];
+  return uniq(['gfs_seamless',sourceIdForAt13Key(r,'temperature_2m')]);
+}
+function hourlyHasAny(hourly,keys){
+  for(var x=0;x<keys.length;x++){
+    var k=keys[x];
+    var vals=hourly[k]||[];
+    for(var i=0;i<vals.length;i++){if(hasV(vals[i]))return true;}
+  }
+  return false;
+}
+function sourceIdsForWindow(r){
+  var iconHourly=((r.sources||{}).icon_d2||{}).hourly||{};
+  var gfsHourly=((r.sources||{}).gfs||{}).hourly||{};
+  var ids=[];
+  if(hourlyHasAny(iconHourly,['temperature_2m','dewpoint_2m','cloudcover','precipitation','windspeed_850hPa','windgusts_10m','temperature_850hPa','temperature_700hPa']))ids.push('icon_d2');
+  if(hourlyHasAny(gfsHourly,['temperature_2m','dewpoint_2m','cloudcover','precipitation','windspeed_850hPa','windgusts_10m','temperature_850hPa','temperature_700hPa','boundary_layer_height','cape','shortwave_radiation']))ids.push('gfs_seamless');
+  return uniq(ids);
+}
+function fmtWithSource(v,u,p,sourceIds){
+  var out=fmt(v,u,p);
+  if(!hasV(v))return out;
+  var short=idsToShort(sourceIds);
+  if(short==='\u2014')return out;
+  return out+'<span class="sv" title="'+esc(idsToLabel(sourceIds))+'">'+esc(short)+'</span>';
+}
+function summarizeUsedSources(r){
+  var t2Ids=sourceIdsForAt13Key(r,'temperature_2m');
+  var tdIds=sourceIdsForAt13Key(r,'dewpoint_2m');
+  var cloudBaseIds=sourceIdsForCloudBase(r);
+  var windIds=uniq([sourceIdForAt13Key(r,'windspeed_850hPa'),sourceIdForAt13Key(r,'windspeed_700hPa')]);
+  var cloudPrecipIds=uniq([sourceIdForAt13Key(r,'cloudcover'),sourceIdForAt13Key(r,'precipitation')]);
+  var wstarIds=sourceIdsForWstar(r);
+  return [
+    ['Temp @2m',idsToLabel(t2Ids)],
+    ['Dewpoint @2m',idsToLabel(tdIds)],
+    ['Cloud base / Margin',idsToLabel(cloudBaseIds)],
+    ['Wind @850/@700',idsToLabel(windIds)],
+    ['Gusts @10m',idsToLabel(sourceIdsForAt13Key(r,'windgusts_10m'))],
+    ['CAPE',idsToLabel(sourceIdsForAt13Key(r,'cape'))],
+    ['Cloud cover / Precip',idsToLabel(cloudPrecipIds)],
+    ['Lapse rate',idsToLabel(sourceIdsForLapse(r))],
+    ['BL height + LI + CIN',idsToLabel(sourceIdsForBlLiCin(r))],
+    ['W*',idsToLabel(wstarIds)],
+    ['Thermal window',idsToLabel(sourceIdsForWindow(r))],
+  ];
+}
+function renderModelLegend(){
+  var ids=['icon_d2','gfs_seamless','ecmwf_ifs025','mosmix_l'];
+  return ids.map(function(id){
+    return '<span class="model-pill">'+esc(modelShortById(id))+': '+esc(modelLabelById(id))+'</span>';
+  }).join(' ');
+}
+function buildHourlyStats(r){
+  var iconHourly=((r.sources||{}).icon_d2||{}).hourly||{};
+  var gfsHourly=((r.sources||{}).gfs||{}).hourly||{};
+  function pickSourceForHour(hour,key){
+    var hKey=hour;
+    var iconTime=iconHourly.time||[];
+    for(var i=0;i<iconTime.length;i++){
+      if(String(iconTime[i]).indexOf(hKey)>=0){
+        var vals=iconHourly[key]||[];
+        if(i<vals.length&&hasV(vals[i]))return 'icon_d2';
+      }
+    }
+    var gfsTime=gfsHourly.time||[];
+    for(var j=0;j<gfsTime.length;j++){
+      if(String(gfsTime[j]).indexOf(hKey)>=0){
+        var gVals=gfsHourly[key]||[];
+        if(j<gVals.length&&hasV(gVals[j]))return 'gfs_seamless';
+      }
+    }
+    return null;
+  }
+  var fields=[
+    ['T/Td/Base/Cloud/Precip',['temperature_2m','dewpoint_2m','cloudcover','precipitation']],
+    ['W850/Gust/Lapse',['windspeed_850hPa','windgusts_10m','temperature_850hPa','temperature_700hPa']],
+  ];
+  var out=[];
+  fields.forEach(function(field){
+    var ic=0,gf=0;
+    var hours=ANALYSIS_HOURS||['08:00','09:00','10:00','11:00','12:00','13:00','14:00','15:00','16:00','17:00','18:00'];
+    hours.forEach(function(hour){
+      var sid=null;
+      for(var i=0;i<field[1].length&&!sid;i++){sid=pickSourceForHour(hour,field[1][i]);}
+      if(sid==='icon_d2')ic++;
+      else if(sid==='gfs_seamless')gf++;
+    });
+    if(ic||gf)out.push(field[0]+': '+modelShortById('icon_d2')+' '+ic+'h / '+modelShortById('gfs_seamless')+' '+gf+'h');
+  });
+  return out;
+}
+const ANALYSIS_HOURS=['08:00','09:00','10:00','11:00','12:00','13:00','14:00','15:00','16:00','17:00','18:00'];
+function renderUsedSources(rows){
+  var h='<div class="used-models"><div class="used-title">Used models for computed values @13:00</div><div class="used-grid">';
+  rows.forEach(function(row){
+    h+='<div class="used-item">'+esc(row[0])+': <strong>'+esc(row[1])+'</strong></div>';
+  });
+  h+='</div><div class="sv-legend">'+renderModelLegend()+'</div>';
+  h+='</div></div>';
+  return h;
+}
+function renderMosmixAgenda(params){
+  if(!params||!params.length)return '';
+  var h='<details class="ref-details" style="margin-top:0.45rem">';
+  h+='<summary class="ref-summary">';
+  h+='<span class="ref-title"><span>\u2139\ufe0f</span><span>MOSMIX parameter agenda</span></span>';
+  h+='<span class="ref-arrow" aria-hidden="true"></span></summary>';
+  h+='<div class="table-wrap"><table class="htbl" style="text-align:left">';
+  h+='<tr><th style="text-align:left">Param</th><th style="text-align:left">Meaning</th></tr>';
+  params.forEach(function(p){
+    h+='<tr><td style="text-align:left"><strong>'+esc(p)+'</strong></td><td style="text-align:left">'+esc(MOSMIX_PARAM_HELP[p]||'Параметр DWD MOSMIX, см. документацию DWD')+'</td></tr>';
+  });
+  h+='</table></div></details>';
+  return h;
+}
 
 /* ── Main render ── */
 function render(date){
@@ -147,9 +373,9 @@ function render(date){
       var arrow=this.querySelector('.arrow');
       if(!det)return;
       if(det.style.display==='none'){
-        det.style.display='';arrow.textContent='\u25bc';this.classList.add('expanded');
+        det.style.display='';arrow.textContent='\u25b4';this.classList.add('expanded');
       }else{
-        det.style.display='none';arrow.textContent='\u25b6';this.classList.remove('expanded');
+        det.style.display='none';arrow.textContent='\u25be';this.classList.remove('expanded');
       }
     });
   });
@@ -158,8 +384,9 @@ function render(date){
 /* ── Parameter reference (collapsed above table) ── */
 function renderRef(){
   var h='<div class="sbox" style="margin-bottom:0.75rem">';
-  h+='<details><summary style="font-size:0.8rem;color:var(--muted);padding:0.3rem 0">';
-  h+='\u2139\ufe0f Parameter Reference &amp; Score</summary>';
+  h+='<details class="ref-details"><summary class="ref-summary">';
+  h+='<span class="ref-title"><span>\u2139\ufe0f</span><span>Parameter Reference &amp; Score</span></span>';
+  h+='<span class="ref-arrow" aria-hidden="true"></span></summary>';
   h+='<div style="font-size:0.75rem;color:var(--muted);margin:0.5rem 0 0;line-height:1.8">';
   h+='<b>Score</b> \u2014 composite rating. Critical flags (WIND/GUSTS/PRECIP) \u22123 each, LOW_BASE \u22122, quality flags (OVERCAST/STABLE/SHORT_WINDOW) \u22121, danger (HIGH_CAPE/UNSTABLE) \u22121. Each positive +2. ';
   h+='Thresholds: \u2264\u22125 NO\u2011GO, \u2264\u22122 UNLIKELY, \u22641 MAYBE, \u22644 GO, >4 STRONG.<br>';
@@ -180,7 +407,7 @@ function renderMainTable(locs){
   var NC=17;
   var h='<div class="sbox"><div class="table-wrap"><table>';
   h+='<thead><tr>';
-  h+='<th style="width:1.5em"></th>';
+  h+='<th style="width:2em"></th>';
   h+='<th>Location</th><th>Drive</th><th>Status</th><th class="n">Score</th>';
   h+='<th class="n">Base, m</th><th class="n">Margin, m</th>';
   h+='<th class="n">W850</th><th class="n">Gusts</th>';
@@ -194,26 +421,41 @@ function renderMainTable(locs){
     var a=r.assessment||{};
     var twh=a.thermal_window_hours||0;
     var tw=twh>0?(a.thermal_window_start+'\u2013'+a.thermal_window_end+' ('+twh+'h)'):'\u2014';
+    var cloudBaseIds=sourceIdsForCloudBase(r);
+    var wind850Ids=sourceIdsForAt13Key(r,'windspeed_850hPa');
+    var gustIds=sourceIdsForAt13Key(r,'windgusts_10m');
+    var capeIds=sourceIdsForAt13Key(r,'cape');
+    var lapseIds=sourceIdsForLapse(r);
+    var blIds=sourceIdsForBlLiCin(r);
+    var wstarIds=sourceIdsForWstar(r);
+    var cloudIds=sourceIdsForAt13Key(r,'cloudcover');
+    var liIds=sourceIdsForBlLiCin(r);
+    var precipIds=sourceIdsForAt13Key(r,'precipitation');
+    var windowIds=sourceIdsForWindow(r);
+    var twCell=tw;
+    if(twh>0&&idsToShort(windowIds)!=='\u2014'){
+      twCell+= '<span class="sv" title="'+esc(idsToLabel(windowIds))+'">'+esc(idsToShort(windowIds))+'</span>';
+    }
 
     /* Summary row */
     h+='<tr class="sum-row" data-key="'+(r.key||'')+'">';
-    h+='<td class="arrow">\u25b6</td>';
+    h+='<td class="arrow">\u25be</td>';
     h+='<td><strong>'+esc(r.location)+'</strong></td>';
     h+='<td>'+fmt(r.drive_h,'h')+'</td>';
     h+='<td>'+badge(a.status)+'</td>';
     h+='<td class="n">'+(a.score!=null?a.score:'\u2014')+'</td>';
-    h+='<td class="n">'+fmt(a.cloudbase_msl,'',0)+'</td>';
-    h+='<td class="n">'+fmt(a.base_margin_over_peaks,'',0)+'</td>';
-    h+='<td class="n">'+fmt(a.wind_850hPa_ms,'',1)+'</td>';
-    h+='<td class="n">'+fmt(a.gusts_10m_ms,'',1)+'</td>';
-    h+='<td class="n">'+fmt(a.cape_J_per_kg,'',0)+'</td>';
-    h+='<td class="n">'+fmt(a.lapse_rate_C_per_km,'',1)+'</td>';
-    h+='<td class="n">'+fmt(a.boundary_layer_height_m,'',0)+'</td>';
-    h+='<td class="n">'+fmt(a.wstar_ms,'',2)+'</td>';
-    h+='<td class="n">'+fmt(a.cloudcover_pct,'',0)+'</td>';
-    h+='<td class="n">'+fmt(a.lifted_index)+'</td>';
-    h+='<td class="n">'+fmt(a.precipitation_mm,'',1)+'</td>';
-    h+='<td>'+tw+'</td>';
+    h+='<td class="n">'+fmtWithSource(a.cloudbase_msl,'',0,cloudBaseIds)+'</td>';
+    h+='<td class="n">'+fmtWithSource(a.base_margin_over_peaks,'',0,cloudBaseIds)+'</td>';
+    h+='<td class="n">'+fmtWithSource(a.wind_850hPa_ms,'',1,wind850Ids)+'</td>';
+    h+='<td class="n">'+fmtWithSource(a.gusts_10m_ms,'',1,gustIds)+'</td>';
+    h+='<td class="n">'+fmtWithSource(a.cape_J_per_kg,'',0,capeIds)+'</td>';
+    h+='<td class="n">'+fmtWithSource(a.lapse_rate_C_per_km,'',1,lapseIds)+'</td>';
+    h+='<td class="n">'+fmtWithSource(a.boundary_layer_height_m,'',0,blIds)+'</td>';
+    h+='<td class="n">'+fmtWithSource(a.wstar_ms,'',2,wstarIds)+'</td>';
+    h+='<td class="n">'+fmtWithSource(a.cloudcover_pct,'',0,cloudIds)+'</td>';
+    h+='<td class="n">'+fmtWithSource(a.lifted_index,'',1,liIds)+'</td>';
+    h+='<td class="n">'+fmtWithSource(a.precipitation_mm,'',1,precipIds)+'</td>';
+    h+='<td>'+twCell+'</td>';
     h+='</tr>';
 
     /* Detail row (collapsed by default) */
@@ -223,7 +465,10 @@ function renderMainTable(locs){
     h+='</div></td></tr>';
   });
 
-  h+='</table></div></div>';
+  h+='</table></div>';
+  h+='<div class="src-note">Маркер рядом со значением показывает модель, из которой реально взято это поле для данного спота.</div>';
+  h+='<div class="sv-legend">'+renderModelLegend()+'</div>';
+  h+='</div>';
   return h;
 }
 
@@ -233,6 +478,34 @@ function renderCardBody(r){
   var h='';
 
   if(r.error){return'<p style="color:var(--nogo)">Error: '+esc(r.error)+'</p>';}
+
+  var srcRows=summarizeUsedSources(r);
+  var srcMap={};
+  srcRows.forEach(function(row){srcMap[row[0]]=row[1]});
+
+  var twh=a.thermal_window_hours||0;
+  var tw=twh>0?(a.thermal_window_start+'\u2013'+a.thermal_window_end+' ('+twh+'h)'):'\u2014';
+  var metrics=[
+    ['Base MSL',fmt(a.cloudbase_msl,'m',0),srcMap['Cloud base / Margin']||'\u2014'],
+    ['Margin over peaks',fmt(a.base_margin_over_peaks,'m',0),srcMap['Cloud base / Margin']||'\u2014'],
+    ['Wind 850 hPa',fmt(a.wind_850hPa_ms,' m/s',1),srcMap['Wind @850/@700']||'\u2014'],
+    ['Wind 700 hPa',fmt(a.wind_700hPa_ms,' m/s',1),srcMap['Wind @850/@700']||'\u2014'],
+    ['Gusts 10m',fmt(a.gusts_10m_ms,' m/s',1),srcMap['Gusts @10m']||'\u2014'],
+    ['CAPE',fmt(a.cape_J_per_kg,' J/kg',0),srcMap.CAPE||'\u2014'],
+    ['LI',fmt(a.lifted_index,'',1),srcMap['BL height + LI + CIN']||'\u2014'],
+    ['CIN',fmt(a.cin_J_per_kg,' J/kg',0),srcMap['BL height + LI + CIN']||'\u2014'],
+    ['Lapse rate',fmt(a.lapse_rate_C_per_km,' \u00b0C/km',1),srcMap['Lapse rate']||'\u2014'],
+    ['BL height',fmt(a.boundary_layer_height_m,'m',0),srcMap['BL height + LI + CIN']||'\u2014'],
+    ['W*',fmt(a.wstar_ms,' m/s',2),srcMap['W*']||'\u2014'],
+    ['Cloud / Precip',fmt(a.cloudcover_pct,'%',0)+' / '+fmt(a.precipitation_mm,' mm',1),srcMap['Cloud cover / Precip']||'\u2014'],
+    ['Thermal window',tw,'Hourly mix (ICON-D2\u2192GFS + GFS BL/CAPE/W*)'],
+  ];
+  h+='<div class="metrics">';
+  metrics.forEach(function(m){
+    h+='<div class="metric"><div class="ml">'+esc(m[0])+'</div><div class="mv">'+m[1]+'</div><div class="ms">'+esc(m[2])+'</div></div>';
+  });
+  h+='</div>';
+  h+=renderUsedSources(srcRows);
 
   /* Flags */
   var flags=a.flags||[],pos=a.positives||[];
@@ -246,7 +519,13 @@ function renderCardBody(r){
   /* Hourly profile */
   var hp=(r.hourly_analysis||{}).hourly_profile||[];
   if(hp.length){
-    h+='<h3>Hourly Profile <span style="font-weight:400;font-size:0.75rem;color:var(--muted)">(ICON-D2 \u2192 GFS fallback \u00b7 BL/CAPE/W* from GFS)</span></h3>';
+    h+='<h3>Hourly Profile</h3>';
+    var hStats=buildHourlyStats(r);
+    if(hStats.length){
+      h+='<div class="src-note">Фактически использованные модели по часам: '+esc(hStats.join(' | '))+'</div>';
+    }else{
+      h+='<div class="src-note">Источник по часам: fallback по данным (ICON-D2 при наличии, иначе GFS).</div>';
+    }
     h+='<div class="table-wrap"><table class="htbl">';
     h+='<tr><th>Hour</th><th>T, \u00b0C</th><th>Dew, \u00b0C</th><th>Base, m</th><th>Cloud, %</th><th>Precip, mm</th>';
     h+='<th>W850, m/s</th><th>Gusts, m/s</th><th>Lapse, \u00b0C/km</th><th>BL, m</th><th>CAPE, J/kg</th><th>W*, m/s</th></tr>';
@@ -283,7 +562,8 @@ function renderCardBody(r){
     var mh=mosmix.hourly||{};
     var params=Object.keys(mh);
     if(params.length){
-      h+='<h3>DWD MOSMIX ('+esc(mosmix.station_name||'?')+')</h3>';
+      var mosmixModel=((mosmix.model||'mosmix_l')+'').toLowerCase();
+      h+='<h3><span class="model-pill">'+esc(modelLabelById(mosmixModel))+'</span> @ '+esc(mosmix.station_name||'?')+'</h3>';
       var allH={};params.forEach(function(p){Object.keys(mh[p]).forEach(function(hr){allH[hr]=1})});
       var sortH=Object.keys(allH).sort();
       var targetH=sortH.filter(function(hr){return['06:00','09:00','12:00','15:00','18:00'].indexOf(hr)>=0});
@@ -296,6 +576,7 @@ function renderCardBody(r){
           h+='</tr>';
         });
         h+='</table></div>';
+        h+=renderMosmixAgenda(params);
       }
     }
   }
@@ -303,9 +584,14 @@ function renderCardBody(r){
   /* Model comparison */
   var mm=((r.sources||{}).multimodel||{}).at_13||{};
   if(Object.keys(mm).length){
-    h+='<h3>Model Comparison @13:00</h3><table style="text-align:center">';
-    h+='<tr><th style="text-align:left">Parameter</th><th style="text-align:center">ICON</th><th style="text-align:center">GFS</th><th style="text-align:center">ECMWF</th></tr>';
-    var models=['icon_seamless','gfs_seamless','ecmwf_ifs025'];
+    var models=['icon_seamless','gfs_seamless','ecmwf_ifs025'].filter(function(mid){
+      return Object.keys(mm).some(function(k){return k.endsWith('_'+mid)});
+    });
+    if(!models.length)models=['icon_seamless','gfs_seamless','ecmwf_ifs025'];
+    h+='<h3>Model Comparison @13:00 <span style="font-weight:400;font-size:0.75rem;color:var(--muted)">(динамические колонки по реально полученным моделям)</span></h3><table style="text-align:center">';
+    h+='<tr><th style="text-align:left">Parameter</th>'+models.map(function(mid){
+      return '<th style="text-align:center">'+esc(modelLabelById(mid))+'</th>';
+    }).join('')+'</tr>';
     ['temperature_2m','dewpoint_2m','cape','cloudcover','windspeed_10m','windgusts_10m','precipitation'].forEach(function(pb){
       h+='<tr><td style="text-align:left"><strong>'+esc(pb)+'</strong></td>';
       h+=models.map(function(m){return'<td style="text-align:center">'+fmt(mm[pb+'_'+m])+'</td>'}).join('');

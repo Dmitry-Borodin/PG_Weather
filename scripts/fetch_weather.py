@@ -585,6 +585,7 @@ def assess_location(loc_key: str, loc: dict, date: str, sources: list) -> dict:
                 for param_name, hourly_vals in d.get("hourly", {}).items():
                     at13[param_name] = hourly_vals.get("12:00") or hourly_vals.get("15:00")
                 result["sources"]["mosmix"] = {
+                    "model": "mosmix_l",
                     "station_name": d.get("station_name", "?"),
                     "at_13": at13,
                     "hourly": d.get("hourly", {}),
