@@ -1,6 +1,6 @@
 # Оценка лётности — как считаются очки и статусы
 
-**Версия:** 2.1
+**Версия:** 2.2
 
 ---
 
@@ -123,7 +123,7 @@ Flyable = можно лететь (не сдует, не зальёт). Thermal 
 |------|---------|-----------|
 | `OVERCAST` | cloudcover @13:00 > 80% | точка 13:00 |
 | `STABLE` | mean(lapse_rate) < 5.5 °C/km | среднее по окну 09–18 |
-| `SHORT_WINDOW` | 0 < continuous_flyable_hours < 5 | compute_flyable_window |
+| `SHORT_WINDOW` | 0 < thermal_window_hours < 5 | thermal window detection |
 | `GUST_FACTOR` | max(gust_factor) > 7.0 м/с | максимум по окну 09–18 |
 
 ### 6.4 Danger (вес −1 за каждый)
@@ -150,18 +150,21 @@ Flyable = можно лететь (не сдует, не зальёт). Thermal 
 
 ---
 
-## 7. Позитивные индикаторы (вес +1 за каждый, v2.0 — снижен с +2)
+## 7. Позитивные индикаторы (v2.2)
 
-| Флаг | Условие | Агрегация |
-|------|---------|-----------|
-| `STRONG_LAPSE` | max(lapse_rate) > 7.0 °C/km | максимум по окну 09–18 |
-| `GOOD_CAPE` | 300 < max(cape) < 1500 J/kg | максимум по окну 09–18 |
-| `DEEP_BL` | max(boundary_layer_height) > 1500 м | максимум по окну (GFS) |
-| `HIGH_BASE` | max(cloudbase_msl) − peaks > 1500 м | максимум по окну 09–18 |
-| `LONG_WINDOW` | continuous_flyable_hours ≥ 7 | compute_flyable_window |
-| `CLEAR_SKY` | cloudcover @13:00 < 30% | точка 13:00 |
-| `GOOD_WSTAR` | max(W*) ≥ 1.5 м/с | максимум по окну (GFS) |
-| `STRONG_SUN` | max(shortwave_radiation) > 600 W/m² | максимум по окну 09–18 |
+| Флаг | Вес | Условие | Агрегация |
+|------|-----|---------|------------|
+| `STRONG_LAPSE` | +1 | max(lapse_rate) > 7.0 °C/km | максимум по окну 09–18 |
+| `GOOD_CAPE` | +1 | 300 < max(cape) < 1500 J/kg | максимум по окну 09–18 |
+| `DEEP_BL` | +1 | max(boundary_layer_height) > 1500 м | максимум по окну (GFS) |
+| `HIGH_BASE` | +1 | max(cloudbase_msl) − peaks > 1500 м | максимум по окну 09–18 |
+| `VERY_HIGH_BASE` | **+2** | max(cloudbase_msl) > 3500 м MSL | максимум по окну 09–18 |
+| `LONG_WINDOW` | +1 | thermal_window_hours ≥ 7 | thermal window detection |
+| `CLEAR_SKY` | +1 | cloudcover @13:00 < 30% | точка 13:00 |
+| `GOOD_WSTAR` | +1 | max(W*) ≥ 1.5 м/с | максимум по окну (GFS) |
+| `STRONG_SUN` | +1 | max(shortwave_radiation) > 600 W/m² | максимум по окну 09–18 |
+
+Примечание: `VERY_HIGH_BASE` и `HIGH_BASE` взаимоисключающие — если база > 3500m, срабатывает VERY_HIGH_BASE (+2).
 
 ---
 

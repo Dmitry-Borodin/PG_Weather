@@ -211,9 +211,7 @@ function valColor(field,val,peaks){
   case'cloudcover':return val>80?'var(--nogo)':val>60?'var(--unlikely)':val<30?'var(--go)':'';
   case'lapse_rate':return val<5.5?'var(--unlikely)':val>7?'var(--go)':'';
   case'cape':return val>1500?'var(--nogo)':(val>=300&&val<=1500)?'var(--go)':'';
-  case'cloudbase_msl':
-    if(peaks!=null){var m=val-peaks;return val<2000?'var(--nogo)':m<1000?'var(--unlikely)':m>1500?'var(--go)':'';}
-    return val<1000?'var(--nogo)':val<2000?'var(--unlikely)':'';
+  case'cloudbase_msl':return val<1000?'var(--nogo)':val>3500?'var(--go)':'';
   case'wstar':return val>=1.5?'var(--go)':val>=1.0?'#059669':'';
   case'lifted_index':return val<-4?'var(--nogo)':'';
   case'bl_height':return val>1500?'var(--go)':'';
@@ -224,7 +222,7 @@ function fmtC(v,u,p,field,peaks){
   var txt=fmt(v,u,p);
   if(v==null)return txt;
   var c=valColor(field,v,peaks);
-  if(c)return'<span style="color:'+c+';font-weight:600">'+txt+'</span>';
+  if(c)return'<span style="color:'+c+'">'+txt+'</span>';
   return txt;
 }
 
@@ -246,7 +244,6 @@ function render(date){
   var h='<h2>\ud83d\udcc5 Forecast for: '+esc(forecastDate)+'</h2>';
   h+=renderRef();
   h+=renderMainTable(locs);
-  h+=renderDoubts(locs);
   document.getElementById('m').innerHTML=h;
   document.querySelectorAll('.sum-row').forEach(function(row){
     row.addEventListener('click',function(){
@@ -269,7 +266,7 @@ function renderRef(){
   h+='<span class="ref-title"><span>\u2139\ufe0f</span><span>Parameter Reference &amp; Score</span></span>';
   h+='<span class="ref-arrow" aria-hidden="true"></span></summary>';
   h+='<div style="font-size:0.75rem;color:var(--muted);margin:0.5rem 0 0;line-height:1.8">';
-  h+='<b>Score v2.0</b> \u2014 base from thermal window hours, then: critical \u00d7(\u22123), LOW_BASE \u00d7(\u22122), quality/danger \u00d7(\u22121), positive \u00d7(+1). ';
+  h+='<b>Score v2.0</b> \u2014 base from thermal window hours, then: critical \u00d7(\u22123), LOW_BASE \u00d7(\u22122), quality/danger \u00d7(\u22121), positive \u00d7(+1), VERY_HIGH_BASE \u00d7(+2). ';
   h+='Thresholds: \u2264\u22125 NO\u2011GO, \u2264\u22122 UNLIKELY, \u22641 MAYBE, \u22644 GO, \u22655 STRONG.<br>';
   h+='<b>Thermal window</b> \u2014 hours with W*\u22651.0, precip\u22640.5, base\u22651000m MSL, cloud<60%. ';
   h+='Base score: 0h=\u22126, 1\u20132h=\u22122, 3\u20134h=+1, 5\u20136h=+4, 7+h=+6.<br>';
@@ -296,12 +293,12 @@ function renderMainTable(locs){
   h+='<th class="n">W850 m</th><th class="n">Gust mx</th><th class="n">GF mx</th>';
   h+='<th class="n">CAPE</th><th class="n">Lapse</th>';
   h+='<th class="n">BL</th><th class="n">W*</th>';
-  h+='<th class="n">Cloud</th><th>Flyable</th><th>Confidence</th>';
+  h+='<th class="n">Cloud</th><th>Thermal</th><th>Confidence</th>';
   h+='</tr></thead>';
   locs.forEach(function(r){
     var a=r.assessment||{};
-    var cfw=a.continuous_flyable_hours||0;
-    var fwStr=cfw>0?cfw+'h ('+(a.flyable_start||'')+'\u2013'+(a.flyable_end||'')+')':'\u2014';
+    var twh=a.thermal_window_hours||0;
+    var twStr=twh>0?twh+'h ('+(a.thermal_window_start||'')+'\u2013'+(a.thermal_window_end||'')+')':'\u2014';
     var ma=a.model_agreement||{};
     var conf=ma.confidence||'?';
     var ascore=ma.agreement_score;
@@ -326,7 +323,7 @@ function renderMainTable(locs){
     h+='<td class="n">'+fmtSrc(a.boundary_layer_height_m,'',0,srcOf('boundary_layer_height_m'))+'</td>';
     h+='<td class="n">'+fmt(a.wstar_ms,'',2)+'</td>';
     h+='<td class="n">'+fmtSrc(a.cloudcover_pct,'%',0,srcOf('cloudcover_pct'))+'</td>';
-    h+='<td>'+fwStr+'</td>';
+    h+='<td>'+twStr+'</td>';
     h+='<td><span class="'+confClass(conf)+'">'+esc(conf)+'</span>'+agreeBar(ascore)+'</td>';
     h+='</tr>';
     h+='<tr id="det-'+(r.key||'')+'" class="detail-row" style="display:none">';
@@ -405,6 +402,7 @@ function renderCardBody(r){
     var twh=sb.tw_hours||0;
     var bs=sb.base_score;
     var nc=sb.n_critical||0,nb=sb.n_low_base||0,nq=sb.n_quality||0,nd=sb.n_danger||0,np=sb.n_positive||0;
+    var nvhb=sb.n_very_high_base||0;
     function sbCls(v){return v>0?'sb-pos':v<0?'sb-neg':'sb-zero'}
     function sbFmt(v){return(v>0?'+':'')+v}
     h+='<h3>Score Breakdown</h3>';
@@ -415,6 +413,7 @@ function renderCardBody(r){
     if(nq)h+='<div class="sb-line"><span class="sb-lbl">Quality flags: '+nq+' \u00d7 (\u22121)</span><span class="sb-val sb-neg">\u2212'+nq+'</span></div>';
     if(nd)h+='<div class="sb-line"><span class="sb-lbl">Danger flags: '+nd+' \u00d7 (\u22121)</span><span class="sb-val sb-neg">\u2212'+nd+'</span></div>';
     if(np)h+='<div class="sb-line"><span class="sb-lbl">Positives: '+np+' \u00d7 (+1)</span><span class="sb-val sb-pos">+'+np+'</span></div>';
+    if(nvhb)h+='<div class="sb-line"><span class="sb-lbl">Very high base: '+nvhb+' \u00d7 (+2)</span><span class="sb-val sb-pos">+'+(nvhb*2)+'</span></div>';
     h+='<div class="sb-line sb-total"><span>Total score</span><span class="sb-val">'+(a.score!=null?a.score:'\u2014')+' \u2192 '+badge(a.status)+'</span></div>';
     h+='</div>';
   }
@@ -717,10 +716,41 @@ function renderCardBody(r){
     }
   }
 
+  /* Per-location doubts/uncertainties */
+  h+=renderLocDoubts(r);
+
   return h;
 }
 
-/* ── Doubts/uncertainties block ── */
+/* ── Per-location doubts ── */
+function renderLocDoubts(r){
+  var a=r.assessment||{};var ma=a.model_agreement||{};var eu=a.ensemble_uncertainty||{};
+  var locIssues=[];
+  if(ma.confidence==='LOW'){
+    locIssues.push('Model agreement LOW ('+Math.round((ma.agreement_score||0)*100)+'%)');
+    var det=ma.details||{};
+    Object.keys(det).forEach(function(p){
+      if(!det[p].agree)locIssues.push('  \u2022 '+p+': ECMWF='+fmt(det[p].ecmwf)+' vs ICON='+fmt(det[p].icon));
+    });
+  }
+  Object.keys(eu).forEach(function(ens){
+    var ed=eu[ens];
+    Object.keys(ed).forEach(function(p){
+      var sp=ed[p].spread;
+      if(sp!=null&&((p==='windspeed_10m'&&sp>4)||(p==='cape'&&sp>600)||(p==='cloudcover'&&sp>40)))
+        locIssues.push(modelShort(ens)+': high spread in '+p+' (\u00b1'+sp.toFixed(1)+')');
+    });
+  });
+  if(!locIssues.length){
+    return'<div class="doubt-box no-doubt" style="margin-top:0.8rem"><h3>\u2705 \u0421\u043e\u043c\u043d\u0435\u043d\u0438\u044f</h3><p style="font-size:0.85rem">\u0417\u043d\u0430\u0447\u0438\u0442\u0435\u043b\u044c\u043d\u044b\u0445 \u0440\u0430\u0441\u0445\u043e\u0436\u0434\u0435\u043d\u0438\u0439 \u043d\u0435 \u043e\u0431\u043d\u0430\u0440\u0443\u0436\u0435\u043d\u043e.</p></div>';
+  }
+  var h='<div class="doubt-box" style="margin-top:0.8rem"><h3>\u26a0\ufe0f \u0421\u043e\u043c\u043d\u0435\u043d\u0438\u044f / \u041d\u0435\u0443\u0432\u0435\u0440\u0435\u043d\u043d\u043e\u0441\u0442\u0438</h3><ul>';
+  locIssues.forEach(function(item){h+='<li>'+esc(item)+'</li>'});
+  h+='</ul></div>';
+  return h;
+}
+
+/* ── Doubts/uncertainties block (legacy, unused) ── */
 function renderDoubts(locs){
   var issues=[];
   locs.forEach(function(r){

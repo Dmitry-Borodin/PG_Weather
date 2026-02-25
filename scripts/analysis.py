@@ -492,10 +492,12 @@ def assess_per_model(per_model_profiles: dict, loc: dict) -> dict:
 # Flags & Metrics (window-based)
 # ══════════════════════════════════════════════
 
-def compute_flags(profile: list, loc: dict, flyable: dict) -> tuple[list, list]:
+def compute_flags(profile: list, loc: dict, flyable: dict,
+                  thermal_window: dict | None = None) -> tuple[list, list]:
     """Return (flags, positives) based on the full thermal window."""
     flags, positives = [], []
     peaks = loc["peaks"]
+    tw_hours = (thermal_window or {}).get("duration_h", 0)
 
     winds_850, gusts_all, winds_10m, bases, capes, cins = [], [], [], [], [], []
     lapse_rates, bl_heights, wstars, sw_rads = [], [], [], []
@@ -542,10 +544,10 @@ def compute_flags(profile: list, loc: dict, flyable: dict) -> tuple[list, list]:
                       f"max gust−mean {max(gust_factors):.1f} m/s (turbulence risk)"))
 
     cfw = flyable.get("continuous_flyable_hours", 0)
-    if 0 < cfw < 5:
-        flags.append(("SHORT_WINDOW", f"continuous flyable {cfw}h < 5h"))
-    elif cfw == 0:
+    if cfw == 0:
         flags.append(("NO_FLYABLE_WINDOW", "no continuous flyable hour detected"))
+    if 0 < tw_hours < 5:
+        flags.append(("SHORT_WINDOW", f"thermal window {tw_hours}h < 5h"))
 
     if bases:
         cb_min = min(bases)
@@ -601,10 +603,12 @@ def compute_flags(profile: list, loc: dict, flyable: dict) -> tuple[list, list]:
     if bases:
         max_base = max(bases)
         margin_max = max_base - peaks
-        if margin_max > 1500:
+        if max_base > 3500:
+            positives.append(("VERY_HIGH_BASE", f"max {max_base:.0f}m MSL (+{margin_max:.0f}m over peaks)"))
+        elif margin_max > 1500:
             positives.append(("HIGH_BASE", f"max {max_base:.0f}m MSL (+{margin_max:.0f}m over peaks)"))
-    if cfw >= 7:
-        positives.append(("LONG_WINDOW", f"{cfw}h continuous flyable window"))
+    if tw_hours >= 7:
+        positives.append(("LONG_WINDOW", f"{tw_hours}h thermal window"))
     if cc13 is not None and cc13 < 30:
         positives.append(("CLEAR_SKY", f"{cc13:.0f}% @13:00"))
     if wstars and max(wstars) >= 1.5:
@@ -736,8 +740,10 @@ def compute_status(flags, positives, agreement, ensemble_unc,
     score -= n_qual * 1
     score -= n_dang * 1
 
-    # ── Bonuses (each +1, reduced from old +2) ──
-    score += len(positives) * 1
+    # ── Bonuses ──
+    # VERY_HIGH_BASE gets +2, all others +1
+    n_vhb = sum(1 for t, _ in positives if t == "VERY_HIGH_BASE")
+    score += (len(positives) - n_vhb) * 1 + n_vhb * 2
 
     # ── Status from score ──
     if score <= -5:
@@ -810,7 +816,8 @@ def compute_status(flags, positives, agreement, ensemble_unc,
         "n_low_base": n_base,
         "n_quality": n_qual,
         "n_danger": n_dang,
-        "n_positive": len(positives),
+        "n_positive": len(positives) - n_vhb,
+        "n_very_high_base": n_vhb,
     }
 
     return score, status, breakdown

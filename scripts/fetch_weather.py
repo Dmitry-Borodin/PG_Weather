@@ -258,16 +258,18 @@ def assess_location(loc_key: str, loc: dict, date: str, sources_list: list) -> d
     # ── Flyable window ──
     flyable = compute_flyable_window(hourly_analysis["hourly_profile"])
 
+    # ── Thermal window ──
+    tw = hourly_analysis.get("thermal_window", {})
+
     # ── Flags & Metrics ──
     flags, positives = compute_flags(
-        hourly_analysis["hourly_profile"], loc, flyable)
+        hourly_analysis["hourly_profile"], loc, flyable, tw)
 
     # ── Model Agreement ──
     agreement = compute_model_agreement(result["sources"])
     ensemble_unc = compute_ensemble_uncertainty(result["sources"])
 
     # ── Score & Status (thermal-window-centric) ──
-    tw = hourly_analysis.get("thermal_window", {})
     profile = hourly_analysis["hourly_profile"]
     bases_win = [p["cloudbase_msl"] for p in profile
                  if WINDOW_START_H <= int(p["hour"][:2]) <= WINDOW_END_H

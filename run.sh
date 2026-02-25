@@ -21,6 +21,9 @@
 # Локальный режим (без Docker, без headless):
 #   ./run.sh --local                           # след. суббота, без Docker
 #   ./run.sh --local 2025-07-15                # конкретная дата, без Docker
+#
+# Интерактивный режим (shell внутри Docker-контейнера):
+#   ./run.sh --shell                           # bash в контейнере с монтированными reports/
 
 set -euo pipefail
 cd "$(dirname "$0")"
@@ -56,12 +59,6 @@ if [[ "${1:-}" == "--local" ]]; then
     exit $?
 fi
 
-# ── Docker mode (default) ──
-DATE="${1:-$(next_saturday)}"
-LOCATIONS="${2:-all}"
-SOURCES="${3:-all}"
-HEADLESS="${4:-meteo_parapente}"
-
 # Docker preflight checks
 if ! command -v docker >/dev/null 2>&1; then
     echo "Docker is not installed or not in PATH."
@@ -74,6 +71,31 @@ if ! docker info >/dev/null 2>&1; then
     echo "Start Docker Desktop/daemon, or use local mode: ./run.sh --local"
     exit 1
 fi
+
+# ── Shell mode (interactive bash inside Docker) ──
+if [[ "${1:-}" == "--shell" ]]; then
+    shift
+
+    echo "Building Docker image..."
+    DOCKER_BUILDKIT=1 docker build -t "$IMAGE_NAME" .
+
+    mkdir -p reports
+
+    echo "Starting interactive shell in container..."
+    echo "  reports/ is mounted at /app/reports"
+    echo "  Run: python3 scripts/fetch_weather.py --help"
+    docker run --rm -it \
+        -v "$(pwd)/reports:/app/reports" \
+        --entrypoint /bin/bash \
+        "$IMAGE_NAME"
+    exit $?
+fi
+
+# ── Docker mode (default) ──
+DATE="${1:-$(next_saturday)}"
+LOCATIONS="${2:-all}"
+SOURCES="${3:-all}"
+HEADLESS="${4:-meteo_parapente}"
 
 echo "Building Docker image..."
 DOCKER_BUILDKIT=1 docker build -t "$IMAGE_NAME" .

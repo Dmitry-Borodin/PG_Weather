@@ -1,6 +1,6 @@
 # Требования: Метео-триаж для XC closed routes
 
-**Версия:** 3.1
+**Версия:** 3.2
 
 ---
 
@@ -95,7 +95,7 @@ FAI-треугольник не обязателен. Open distance не инт�
 |----------|-------|-----------|------|
 | Облачность @13:00 | > 80% | at_13_local | OVERCAST |
 | Lapse rate | < 5.5 °C/km | mean по окну | STABLE |
-| Рабочее окно | < 5 ч | compute_flyable | SHORT_WINDOW |
+| Термическое окно | < 5 ч | thermal_window_hours | SHORT_WINDOW |
 | Gust factor (порыв − средний) | > 7 м/с | max по окну | GUST_FACTOR |
 
 ### Облачная база (LOW_BASE — вес −2)
@@ -112,18 +112,21 @@ FAI-треугольник не обязателен. Open distance не инт�
 | CAPE тренд | late > early × 1.5 и late > 800 | head vs tail | CAPE_RISING |
 | LI @13:00 | < −4 | at_13_local | VERY_UNSTABLE |
 
-### Позитивные индикаторы (вес +1, v2.0)
+### Позитивные индикаторы (v2.2)
 
-| Параметр | Порог | Агрегация | Флаг |
-|----------|-------|-----------|------|
-| Lapse rate max | > 7 °C/km | max по окну | STRONG_LAPSE |
-| CAPE peak | 300–1500 J/kg | max по окну | GOOD_CAPE |
-| BL height max | > 1500 м | max по окну | DEEP_BL |
-| CB max | > peaks + 1500 м | max по окну | HIGH_BASE |
-| Рабочее окно | ≥ 7 ч | compute_flyable | LONG_WINDOW |
-| Облачность @13:00 | < 30% | at_13_local | CLEAR_SKY |
-| W* max | ≥ 1.5 м/с | max по окну | GOOD_WSTAR |
-| SW radiation max | > 600 W/m² | max по окну | STRONG_SUN |
+| Параметр | Порог | Агрегация | Флаг | Вес |
+|----------|-------|-----------|------|-----|
+| Lapse rate max | > 7 °C/km | max по окну | STRONG_LAPSE | +1 |
+| CAPE peak | 300–1500 J/kg | max по окну | GOOD_CAPE | +1 |
+| BL height max | > 1500 м | max по окну | DEEP_BL | +1 |
+| CB max | > peaks + 1500 м | max по окну | HIGH_BASE | +1 |
+| CB max | > 3500 м MSL | max по окну | VERY_HIGH_BASE | +2 |
+| Термическое окно | ≥ 7 ч | thermal_window_hours | LONG_WINDOW | +1 |
+| Облачность @13:00 | < 30% | at_13_local | CLEAR_SKY | +1 |
+| W* max | ≥ 1.5 м/с | max по окну | GOOD_WSTAR | +1 |
+| SW radiation max | > 600 W/m² | max по окну | STRONG_SUN | +1 |
+
+> HIGH_BASE и VERY_HIGH_BASE взаимоисключающие: если база > 3500 → VERY_HIGH_BASE (+2), иначе если > peaks+1500 → HIGH_BASE (+1).
 
 ### Модельные флаги (динамические)
 
@@ -257,7 +260,8 @@ Spreads ECMWF ENS + ICON-EU EPS at_13_local.
 Большой spread → понижение статуса.
 
 ### Этап 8 — Scoring & Status (`compute_status`)
-Формула: score = −3×critical − 2×low_base − 1×quality − 1×danger + 2×positives.
+Формула: score = −3×critical − 2×low_base − 1×quality − 1×danger + Σ(positive weights).
+Веса позитивных: VERY_HIGH_BASE = +2, остальные = +1.
 Жёсткие правила: критические флаги и модельная неуверенность могут понизить статус.
 
 ### Этап 9 — Финальный ранжир
@@ -311,10 +315,11 @@ Spreads ECMWF ENS + ICON-EU EPS at_13_local.
 | QUALITY | OVERCAST, STABLE, SHORT_WINDOW, GUST_FACTOR | −1 |
 | DANGER | HIGH_CAPE, VERY_UNSTABLE, CAPE_RISING | −1 |
 | POSITIVE | STRONG_LAPSE, GOOD_CAPE, DEEP_BL, HIGH_BASE, LONG_WINDOW, CLEAR_SKY, GOOD_WSTAR, STRONG_SUN | +1 |
+| VERY_HIGH_BASE | VERY_HIGH_BASE (взамен HIGH_BASE, если база > 3500 м MSL) | +2 |
 
 ### Формула
 ```
-score = −3 × n_critical − 2 × n_low_base − 1 × n_quality − 1 × n_danger + 1 × n_positive
+score = −3 × n_critical − 2 × n_low_base − 1 × n_quality − 1 × n_danger + 1 × n_positive + 2 × n_very_high_base
 ```
 
 ### Пороги статуса
