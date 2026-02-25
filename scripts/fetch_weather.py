@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Сбор прогнозных данных для метео-триажа XC closed routes.
-Версия: 0.4
+Версия: 0.5
 
 Источники:
   - Open-Meteo ICON-D2 (hi-res, 2 км)
@@ -18,6 +18,7 @@
   - JSON (машиночитаемые данные)
   - Markdown (человекочитаемый отчёт)
   - HTML viewer (index.html — единый интерфейс для всех отчётов)
+  - Self-contained HTML (latest.html + <forecast>_<timestamp>.html для последнего запуска)
 
 Использование:
     python scripts/fetch_weather.py                                  # след. суббота, все
@@ -1008,8 +1009,18 @@ def generate_markdown_report(results: list, date: str, gen_time: str) -> str:
 # ══════════════════════════════════════════════
 
 
+def _render_viewer_html(report_map: dict) -> str:
+    """Render viewer HTML with embedded report map."""
+    template_path = Path(__file__).parent / "viewer_template.html"
+    with open(template_path, "r", encoding="utf-8") as f:
+        template = f.read()
+
+    data_json = json.dumps(report_map, ensure_ascii=False)
+    return template.replace("__REPORTS_DATA__", data_json)
+
+
 def generate_viewer_html(reports_dir: Path):
-    """Generate self-contained HTML viewer (index.html) embedding all JSON reports."""
+    """Generate history viewer (index.html) embedding all JSON reports."""
     json_files = sorted(reports_dir.glob("*.json"), reverse=True)
 
     all_reports = {}
@@ -1024,17 +1035,27 @@ def generate_viewer_html(reports_dir: Path):
         print("  No JSON reports found, skipping viewer generation", file=sys.stderr)
         return
 
-    template_path = Path(__file__).parent / "viewer_template.html"
-    with open(template_path, "r", encoding="utf-8") as f:
-        template = f.read()
-
-    data_json = json.dumps(all_reports, ensure_ascii=False)
-    html = template.replace("__REPORTS_DATA__", data_json)
+    html = _render_viewer_html(all_reports)
 
     viewer_path = reports_dir / "index.html"
     with open(viewer_path, "w", encoding="utf-8") as f:
         f.write(html)
     print(f"HTML viewer:     {viewer_path}", file=sys.stderr)
+
+
+def generate_single_report_html(reports_dir: Path, report_key: str, report_data: dict):
+    """Generate self-contained HTML for one report + stable latest.html alias."""
+    html = _render_viewer_html({report_key: report_data})
+
+    dated_path = reports_dir / f"{report_key}.html"
+    with open(dated_path, "w", encoding="utf-8") as f:
+        f.write(html)
+    print(f"HTML report:     {dated_path}", file=sys.stderr)
+
+    latest_path = reports_dir / "latest.html"
+    with open(latest_path, "w", encoding="utf-8") as f:
+        f.write(html)
+    print(f"HTML latest:     {latest_path}", file=sys.stderr)
 
 
 # ══════════════════════════════════════════════
@@ -1199,6 +1220,7 @@ def main():
     # ── HTML Viewer ──
     if not args.no_viewer:
         generate_viewer_html(out_dir)
+        generate_single_report_html(out_dir, file_stem, json_output)
 
 
 if __name__ == "__main__":
