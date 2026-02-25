@@ -18,8 +18,10 @@ import io
 import json
 import math
 import sys
+import time
 import zipfile
 from datetime import datetime, timezone
+from urllib.error import URLError
 from urllib.request import urlopen, Request
 from urllib.parse import urlencode
 from xml.etree import ElementTree as ET
@@ -130,16 +132,34 @@ def _local_to_utc(date_str: str, hour: int) -> datetime:
 # HTTP Utilities
 # ══════════════════════════════════════════════
 
+_MAX_RETRIES = 3
+_RETRY_DELAY = 2  # seconds
+
+
+def _fetch_with_retry(url: str, timeout: int = 30) -> bytes:
+    """Fetch URL with retries on transient errors (SSL, connection, timeout)."""
+    last_err = None
+    for attempt in range(_MAX_RETRIES):
+        try:
+            req = Request(url, headers={"User-Agent": f"PG-Weather-Triage/{APP_VERSION}"})
+            with urlopen(req, timeout=timeout) as resp:
+                return resp.read()
+        except (URLError, OSError, TimeoutError) as e:
+            last_err = e
+            # Don't retry HTTP 4xx errors (bad request, not found, etc.)
+            if hasattr(e, 'code') and 400 <= e.code < 500:
+                raise
+            if attempt < _MAX_RETRIES - 1:
+                time.sleep(_RETRY_DELAY * (attempt + 1))
+    raise last_err
+
+
 def _fetch_json(url: str, timeout: int = 30) -> dict:
-    req = Request(url, headers={"User-Agent": f"PG-Weather-Triage/{APP_VERSION}"})
-    with urlopen(req, timeout=timeout) as resp:
-        return json.loads(resp.read().decode())
+    return json.loads(_fetch_with_retry(url, timeout).decode())
 
 
 def _fetch_bytes(url: str, timeout: int = 30) -> bytes:
-    req = Request(url, headers={"User-Agent": f"PG-Weather-Triage/{APP_VERSION}"})
-    with urlopen(req, timeout=timeout) as resp:
-        return resp.read()
+    return _fetch_with_retry(url, timeout)
 
 
 # ══════════════════════════════════════════════

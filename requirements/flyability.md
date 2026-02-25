@@ -1,6 +1,6 @@
 # Оценка лётности — как считаются очки и статусы
 
-**Версия:** 2.4
+**Версия:** 2.6
 
 ---
 
@@ -40,12 +40,17 @@
 
 ## 3. Входные данные для оценки
 
-### 3.1 Combined Hourly Profile
+### 3.1 Averaged Hourly Profile (v2.5)
 
-Merge из best-available модели каждого семейства (08:00–18:00 local).
-Приоритет слоёв: `Best ICON > Best ECMWF > GFS` (подробнее в priorities.md §4).
+Для scoring строится **усреднённый профиль** из best ICON и best ECMWF (08:00–18:00 local).
+Общие параметры (temp, wind, cloud, precip, CAPE, SW, lapse и т.д.) — среднее арифметическое обеих моделей.
+Если одна модель не имеет данных — берётся значение другой (без усреднения).
 
-GFS-only поля: `boundary_layer_height`, `lifted_index`, `convective_inhibition`.
+GFS-only поля: `boundary_layer_height`, `lifted_index`, `convective_inhibition` — берутся из GFS напрямую.
+ICON-only поле: `updraft` — берётся из ICON напрямую.
+Расчётные поля (`cloudbase_msl`, `wstar`, `gust_factor`) пересчитываются на усреднённых входных данных.
+
+В HTML-вьюере показываются 3 отдельные таблицы: ICON, ECMWF, GFS (каждая с параметрами своей модели).
 
 `updraft` (м/с) — нативный параметр ICON D2 (2 км, ≤48ч): максимальная вертикальная скорость конвективного восходящего потока от поверхности до 10 км. ICON EU/Global возвращают null. Более физически точный показатель термического потенциала, чем расчётный Deardorff W*.
 
@@ -109,7 +114,7 @@ Flyable = можно лететь (не сдует, не зальёт). Thermal 
 
 | Флаг | Условие | Агрегация |
 |------|---------|-----------|
-| `SUSTAINED_WIND_850` | mean(windspeed_850hPa) > 5.0 м/с | среднее по окну 09–18 |
+| `SUSTAINED_WIND_700` | mean(windspeed_700hPa) > 5.0 м/с | среднее по окну 09–18 |
 | `GUSTS_HIGH` | mean(windgusts_10m) > 10.0 м/с | среднее по окну 09–18 |
 | `PRECIP_13` | precipitation @13:00 > 0.5 мм | точка 13:00 |
 | `NO_FLYABLE_WINDOW` | continuous_flyable_hours = 0 | compute_flyable_window |

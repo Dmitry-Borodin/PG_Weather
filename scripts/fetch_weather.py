@@ -41,7 +41,7 @@ from analysis import (
     WINDOW_START_H, WINDOW_END_H,
     _extract_at_13_local, _extract_window_stats,
     estimate_cloudbase_msl, lapse_rate, estimate_wstar,
-    build_hourly_profile, build_per_model_profiles, assess_per_model,
+    build_averaged_profile, build_per_model_profiles, assess_per_model,
     compute_flyable_window, compute_flags,
     compute_model_agreement, compute_ensemble_uncertainty,
     compute_status, integrate_meteo_parapente,
@@ -242,18 +242,21 @@ def assess_location(loc_key: str, loc: dict, date: str, sources_list: list) -> d
             print(f"✗ {e}", file=sys.stderr)
             result["sources"]["mosmix"] = {"error": str(e)}
 
-    # ── Build combined hourly profile ──
-    hourly_analysis = build_hourly_profile(result["sources"], date, loc)
-    result["hourly_analysis"] = hourly_analysis
-
     # ── Build per-model profiles ──
     per_model_profiles = build_per_model_profiles(result["sources"], date, loc)
     per_model_assessment = assess_per_model(per_model_profiles, loc)
+
+    # ── Build averaged hourly profile (ICON+ECMWF avg, GFS fallback) ──
+    hourly_analysis = build_averaged_profile(per_model_profiles, result["sources"], date, loc)
+    result["hourly_analysis"] = hourly_analysis
 
     # Store per-model profiles in hourly_analysis (for viewer)
     hourly_analysis["model_profiles"] = {
         k: v for k, v in per_model_profiles.items()
     }
+    # Store family source keys for viewer headers
+    hourly_analysis["icon_source"] = hourly_analysis.get("icon_source")
+    hourly_analysis["ecmwf_source"] = hourly_analysis.get("ecmwf_source")
 
     # ── Flyable window ──
     flyable = compute_flyable_window(hourly_analysis["hourly_profile"])
@@ -345,9 +348,9 @@ def assess_location(loc_key: str, loc: dict, date: str, sources_list: list) -> d
     bm = (cbm - loc["peaks"]) if cbm is not None else None
 
     # Window metrics
-    winds_850_win = [p["wind_850"] for p in profile
+    winds_700_win = [p["wind_700"] for p in profile
                      if WINDOW_START_H <= int(p["hour"][:2]) <= WINDOW_END_H
-                     and p["wind_850"] is not None]
+                     and p["wind_700"] is not None]
     gusts_win = [p["gusts"] for p in profile
                  if WINDOW_START_H <= int(p["hour"][:2]) <= WINDOW_END_H
                  and p["gusts"] is not None]
@@ -382,7 +385,7 @@ def assess_location(loc_key: str, loc: dict, date: str, sources_list: list) -> d
         "thermal_window_peak": tw.get("peak_hour"),
 
         # Window-based metrics
-        "sustained_wind_850_mean": round(statistics.mean(winds_850_win), 1) if winds_850_win else None,
+        "sustained_wind_700_mean": round(statistics.mean(winds_700_win), 1) if winds_700_win else None,
         "mean_gust_window": round(statistics.mean(gusts_win), 1) if gusts_win else None,
         "max_gust_factor_window": round(max(gf_win), 1) if gf_win else None,
         "continuous_flyable_hours": flyable["continuous_flyable_hours"],
@@ -548,16 +551,7 @@ def main():
                 clean_src[sn] = sd
         rc["sources"] = clean_src
 
-        # Strip model_profiles from hourly_analysis (too large for JSON)
-        ha = rc.get("hourly_analysis", {})
-        if "model_profiles" in ha:
-            # Keep summary, not full profiles
-            mp_summary = {}
-            for mk, mp in ha["model_profiles"].items():
-                mp_summary[mk] = {"hours": len(mp), "model_label": MODEL_LABELS.get(mk, mk)}
-            ha["model_profiles_summary"] = mp_summary
-            del ha["model_profiles"]
-
+        # Keep model_profiles in JSON (needed by viewer for family tables)
         json_results.append(rc)
 
     # Determine which model keys were used

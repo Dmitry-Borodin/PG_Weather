@@ -35,7 +35,7 @@ _GFS_ONLY_FIELDS = {"boundary_layer_height", "lifted_index", "convective_inhibit
 # updraft: ICON D2 only (2 km, ≤48ч) — EU/Global return null (v2.3)
 
 # Flag categories for scoring
-CRITICAL_TAGS = {"SUSTAINED_WIND_850", "GUSTS_HIGH", "PRECIP_13", "NO_FLYABLE_WINDOW"}
+CRITICAL_TAGS = {"SUSTAINED_WIND_700", "GUSTS_HIGH", "PRECIP_13", "NO_FLYABLE_WINDOW"}
 QUALITY_TAGS  = {"OVERCAST", "STABLE", "SHORT_WINDOW", "GUST_FACTOR"}
 DANGER_TAGS   = {"HIGH_CAPE", "VERY_UNSTABLE", "CAPE_RISING"}
 
@@ -148,7 +148,7 @@ def estimate_wstar(bl_h, sw_rad, temp_c):
 
 
 # ══════════════════════════════════════════════
-# Hourly Profile (combined best available)
+# Hourly Profile: Averaged (ICON + ECMWF) + GFS fallback
 # ══════════════════════════════════════════════
 
 def _get_val(hourly, times, hour_str, key):
@@ -187,91 +187,103 @@ def _find_available_sources(sources: dict) -> dict:
     return result
 
 
-def build_hourly_profile(sources: dict, date: str, loc: dict) -> dict:
-    """Combined hourly profile from best available deterministic model.
+def _avg(a, b, decimals=2):
+    """Average two values; return whichever is not None, or None."""
+    if a is not None and b is not None:
+        return round((a + b) / 2, decimals)
+    return a if a is not None else b
 
-    Priority: ICON (D2>EU>Global) > ECMWF (0.25>0.4) > GFS.
-    GFS always for BL height, LI, CIN.
+
+def build_averaged_profile(per_model_profiles: dict, sources: dict,
+                           date: str, loc: dict) -> dict:
+    """Build averaged hourly profile from best ICON + best ECMWF.
+
+    Common parameters: averaged when both models have data.
+    GFS-only fields: boundary_layer_height, lifted_index, convective_inhibition.
+    Updraft: ICON only.
+    W*: computed from GFS BL height + averaged SW + averaged T.
+
+    Returns dict with:
+      - hourly_profile: averaged profile for scoring
+      - thermal_window: detected from averaged profile
+      - icon_source / ecmwf_source: which model was used
     """
-    avail = _find_available_sources(sources)
+    # Find best available per family
+    icon_key, icon_prof = None, None
+    for k in ("icon_d2", "icon_eu", "icon_global", "icon_seamless"):
+        if k in per_model_profiles:
+            icon_key, icon_prof = k, per_model_profiles[k]
+            break
 
-    # Build layers in priority order
-    layers = []
-    for family in ("icon", "ecmwf", "gfs"):
-        if family in avail:
-            layers.append(avail[family])
+    ecmwf_key, ecmwf_prof = None, None
+    for k in ("ecmwf_ifs025", "ecmwf_ifs04", "ecmwf_hres"):
+        if k in per_model_profiles:
+            ecmwf_key, ecmwf_prof = k, per_model_profiles[k]
+            break
 
-    # GFS layer for exclusive fields
-    gfs_layer = avail.get("gfs")
+    gfs_key, gfs_prof = None, None
+    for k in ("gfs_seamless", "gfs"):
+        if k in per_model_profiles:
+            gfs_key, gfs_prof = k, per_model_profiles[k]
+            break
 
-    def _pick(key, hour):
-        """Get (value, source_key) from first layer that has it."""
-        for name, h, t in layers:
-            v = _get_val(h, t, hour, key)
-            if v is not None:
-                return v, name
-        return None, None
-
-    def _pick_gfs(key, hour):
-        if gfs_layer is None:
-            return None, None
-        v = _get_val(gfs_layer[1], gfs_layer[2], hour, key)
-        return (v, gfs_layer[0]) if v is not None else (None, None)
-
+    n_hours = len(ANALYSIS_HOURS)
     profile = []
-    for hour in ANALYSIS_HOURS:
-        src_map = {}
+    for i in range(n_hours):
+        iv = icon_prof[i] if icon_prof and i < len(icon_prof) else {}
+        ev = ecmwf_prof[i] if ecmwf_prof and i < len(ecmwf_prof) else {}
+        gv = gfs_prof[i] if gfs_prof and i < len(gfs_prof) else {}
 
-        t2m, s   = _pick("temperature_2m", hour);       src_map["temp_2m"] = s
-        td, s    = _pick("dewpoint_2m", hour);           src_map["dewpoint"] = s
-        cloud, s = _pick("cloudcover", hour);            src_map["cloudcover"] = s
-        cl_lo, s = _pick("cloudcover_low", hour);        src_map["cloudcover_low"] = s
-        cl_mi, s = _pick("cloudcover_mid", hour);        src_map["cloudcover_mid"] = s
-        cl_hi, s = _pick("cloudcover_high", hour);       src_map["cloudcover_high"] = s
-        prec, s  = _pick("precipitation", hour);         src_map["precipitation"] = s
-        ws10, s  = _pick("windspeed_10m", hour);         src_map["wind_10m"] = s
-        gust, s  = _pick("windgusts_10m", hour);         src_map["gusts"] = s
-        ws850, s = _pick("windspeed_850hPa", hour);      src_map["wind_850"] = s
-        ws700, s = _pick("windspeed_700hPa", hour);      src_map["wind_700"] = s
-        t850, s  = _pick("temperature_850hPa", hour);    src_map["t850"] = s
-        t700, s  = _pick("temperature_700hPa", hour);    src_map["t700"] = s
-        rh850, s = _pick("relative_humidity_850hPa", hour); src_map["rh_850"] = s
-        rh700, s = _pick("relative_humidity_700hPa", hour); src_map["rh_700"] = s
-        sw, s_sw = _pick("shortwave_radiation", hour);   src_map["shortwave_radiation"] = s_sw
-        cape, s_cape = _pick("cape", hour);              src_map["cape"] = s_cape
-        updraft_v, s_upd = _pick("updraft", hour);       src_map["updraft"] = s_upd
+        # Average common fields from ICON + ECMWF
+        t2m = _avg(iv.get("temp_2m"), ev.get("temp_2m"))
+        td = _avg(iv.get("dewpoint"), ev.get("dewpoint"))
+        cloud = _avg(iv.get("cloudcover"), ev.get("cloudcover"), 0)
+        cl_lo = _avg(iv.get("cloudcover_low"), ev.get("cloudcover_low"), 0)
+        cl_mi = _avg(iv.get("cloudcover_mid"), ev.get("cloudcover_mid"), 0)
+        cl_hi = _avg(iv.get("cloudcover_high"), ev.get("cloudcover_high"), 0)
+        prec = _avg(iv.get("precipitation"), ev.get("precipitation"))
+        ws10 = _avg(iv.get("wind_10m"), ev.get("wind_10m"))
+        gust = _avg(iv.get("gusts"), ev.get("gusts"))
+        ws850 = _avg(iv.get("wind_850"), ev.get("wind_850"))
+        ws700 = _avg(iv.get("wind_700"), ev.get("wind_700"))
+        rh850 = _avg(iv.get("rh_850"), ev.get("rh_850"), 0)
+        rh700 = _avg(iv.get("rh_700"), ev.get("rh_700"), 0)
+        lr = _avg(iv.get("lapse_rate"), ev.get("lapse_rate"), 1)
+        cape_v = _avg(iv.get("cape"), ev.get("cape"), 0)
+        sw = _avg(iv.get("shortwave_radiation"), ev.get("shortwave_radiation"), 0)
 
-        bl, s    = _pick_gfs("boundary_layer_height", hour); src_map["bl_height"] = s
-        li, s    = _pick_gfs("lifted_index", hour);          src_map["lifted_index"] = s
-        cin, s_cin = _pick_gfs("convective_inhibition", hour); src_map["cin"] = s_cin
+        # GFS-only fields
+        bl = gv.get("bl_height")
+        li = gv.get("lifted_index")
+        cin = gv.get("cin")
+
+        # Fallback: SW/CAPE from GFS if neither ICON nor ECMWF has it
         if sw is None:
-            sw2, s_sw2 = _pick_gfs("shortwave_radiation", hour)
-            if sw2 is not None:
-                sw, src_map["shortwave_radiation"] = sw2, s_sw2
-        if cape is None:
-            cape2, s_cape2 = _pick_gfs("cape", hour)
-            if cape2 is not None:
-                cape, src_map["cape"] = cape2, s_cape2
+            sw = gv.get("shortwave_radiation")
+        if cape_v is None:
+            cape_v = gv.get("cape")
 
+        # ICON-only: updraft
+        updraft_v = iv.get("updraft")
+
+        # Derived fields computed on averaged values
         base_msl = estimate_cloudbase_msl(t2m, td, loc["elev"])
-        lr = lapse_rate(t850, t700)
-        ws = estimate_wstar(bl, sw, t2m)
+        ws_v = estimate_wstar(bl, sw, t2m)
 
         gust_factor = None
         if gust is not None and ws10 is not None:
             gust_factor = round(gust - ws10, 1)
 
-        src_counts = {}
-        for fld, sk in src_map.items():
-            if sk is not None:
-                src_counts[sk] = src_counts.get(sk, 0) + 1
-        primary_src = max(src_counts, key=src_counts.get) if src_counts else None
-
-        src_detail = {fld: sk for fld, sk in src_map.items()
-                      if sk is not None and sk != primary_src}
+        # Source tracking
+        src_parts = []
+        if icon_key:
+            src_parts.append(icon_key)
+        if ecmwf_key:
+            src_parts.append(ecmwf_key)
+        src_label = "avg" if len(src_parts) == 2 else (src_parts[0] if src_parts else None)
 
         profile.append({
-            "hour": hour,
+            "hour": ANALYSIS_HOURS[i],
             "temp_2m": t2m, "dewpoint": td,
             "cloudbase_msl": base_msl,
             "cloudcover": cloud,
@@ -281,18 +293,23 @@ def build_hourly_profile(sources: dict, date: str, loc: dict) -> dict:
             "wind_850": ws850, "wind_700": ws700,
             "rh_850": rh850, "rh_700": rh700,
             "lapse_rate": lr,
-            "bl_height": bl, "cape": cape, "cin": cin, "lifted_index": li,
+            "bl_height": bl, "cape": cape_v, "cin": cin, "lifted_index": li,
             "shortwave_radiation": sw,
             "updraft": round(updraft_v, 2) if updraft_v is not None else None,
-            "wstar": ws,
-            "_src": primary_src,
-            "_src_overrides": src_detail if src_detail else None,
+            "wstar": ws_v,
+            "_src": src_label,
+            "_src_overrides": None,
         })
 
     # ── Thermal window detection ──
     window = _detect_thermal_window(profile, loc)
 
-    return {"hourly_profile": profile, "thermal_window": window}
+    return {
+        "hourly_profile": profile,
+        "thermal_window": window,
+        "icon_source": icon_key,
+        "ecmwf_source": ecmwf_key,
+    }
 
 
 def _detect_thermal_window(profile: list, loc: dict) -> dict:
@@ -462,10 +479,10 @@ def assess_per_model(per_model_profiles: dict, loc: dict) -> dict:
         t_hours = tw.get("duration_h", 0)
 
         # Quick wind check
-        winds_850 = [p["wind_850"] for p in profile
+        winds_700 = [p["wind_700"] for p in profile
                      if WINDOW_START_H <= int(p["hour"][:2]) <= WINDOW_END_H
-                     and p.get("wind_850") is not None]
-        high_wind = winds_850 and statistics.mean(winds_850) > 5.0
+                     and p.get("wind_700") is not None]
+        high_wind = winds_700 and statistics.mean(winds_700) > 5.0
 
         # Quick precip check
         p13 = None
@@ -504,7 +521,7 @@ def compute_flags(profile: list, loc: dict, flyable: dict,
     peaks = loc["peaks"]
     tw_hours = (thermal_window or {}).get("duration_h", 0)
 
-    winds_850, gusts_all, winds_10m, bases, capes, cins = [], [], [], [], [], []
+    winds_700, gusts_all, winds_10m, bases, capes, cins = [], [], [], [], [], []
     lapse_rates, bl_heights, wstars, sw_rads = [], [], [], []
     gust_factors = []
 
@@ -512,8 +529,8 @@ def compute_flags(profile: list, loc: dict, flyable: dict,
         h = int(p["hour"].split(":")[0])
         if h < WINDOW_START_H or h > WINDOW_END_H:
             continue
-        if p.get("wind_850") is not None:
-            winds_850.append(p["wind_850"])
+        if p.get("wind_700") is not None:
+            winds_700.append(p["wind_700"])
         if p.get("gusts") is not None:
             gusts_all.append(p["gusts"])
         if p.get("wind_10m") is not None:
@@ -536,9 +553,9 @@ def compute_flags(profile: list, loc: dict, flyable: dict,
             gust_factors.append(p["gust_factor"])
 
     # ── Stop-flags (Critical) ──
-    if winds_850 and statistics.mean(winds_850) > 5.0:
-        mean_w = statistics.mean(winds_850)
-        flags.append(("SUSTAINED_WIND_850",
+    if winds_700 and statistics.mean(winds_700) > 5.0:
+        mean_w = statistics.mean(winds_700)
+        flags.append(("SUSTAINED_WIND_700",
                       f"mean {mean_w:.1f} m/s over window > 5.0 (closed route threshold)"))
 
     if gusts_all and statistics.mean(gusts_all) > 10.0:
@@ -650,7 +667,7 @@ def compute_model_agreement(sources: dict) -> dict:
         "temperature_2m": 2.0, "windspeed_10m": 2.0,
         "windgusts_10m": 3.0, "cloudcover": 20.0,
         "precipitation": 0.5, "cape": 200.0,
-        "windspeed_850hPa": 2.0,
+        "windspeed_700hPa": 2.0,
     }
 
     agrees, details = [], {}

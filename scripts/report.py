@@ -66,8 +66,8 @@ def print_triage(results, forecast_date):
               f"(min: {_fv(a.get('cb_min_msl'),' m',0)}, "
               f"typ: {_fv(a.get('cb_typ_msl'),' m',0)}) "
               f"margin: {_fv(a.get('base_margin_over_peaks'),' m',0)}")
-        print(f"     Wind @850: {_fv(a.get('wind_850hPa_ms'),' m/s',1)} "
-              f"(mean window: {_fv(a.get('sustained_wind_850_mean'),' m/s',1)})  |  "
+        print(f"     Wind @700: {_fv(a.get('wind_700hPa_ms'),' m/s',1)} "
+              f"(mean window: {_fv(a.get('sustained_wind_700_mean'),' m/s',1)})  |  "
               f"Gusts: {_fv(a.get('gusts_10m_ms'),' m/s',1)} "
               f"(mean window: {_fv(a.get('mean_gust_window'),' m/s',1)})  |  "
               f"GF max: {_fv(a.get('max_gust_factor_window'),' m/s',1)}")
@@ -161,7 +161,7 @@ def generate_markdown_report(results, date, gen_time, locations_dict):
 
     # ── Summary table ──
     L.append("## 📊 Summary\n")
-    L.append("| Location | Drive | Status | Base @13 | Margin | W850 mean | Gusts max | CAPE | Lapse | BL | W* | Thermal | Flyable | Confidence |")
+    L.append("| Location | Drive | Status | Base @13 | Margin | W700 mean | Gusts max | CAPE | Lapse | BL | W* | Thermal | Flyable | Confidence |")
     L.append("|----------|-------|--------|----------|--------|-----------|-----------|------|-------|----|-----|---------|---------|------------|")
     for r in sorted_r:
         a = r.get("assessment", {})
@@ -176,7 +176,7 @@ def generate_markdown_report(results, date, gen_time, locations_dict):
             f"| {em} **{s}** "
             f"| {_v(a.get('cloudbase_msl'),'m')} "
             f"| {_v(a.get('base_margin_over_peaks'),'m')} "
-            f"| {_v(a.get('sustained_wind_850_mean'),'m/s')} "
+            f"| {_v(a.get('sustained_wind_700_mean'),'m/s')} "
             f"| {_v(a.get('mean_gust_window'),'m/s')} "
             f"| {_v(a.get('cape_J_per_kg'),'',0)} "
             f"| {_v(a.get('lapse_rate_C_per_km'),'°C/km')} "
@@ -202,8 +202,8 @@ def generate_markdown_report(results, date, gen_time, locations_dict):
         L.append(f"- **Cloud Base**: {_v(a.get('cloudbase_msl'),'m')} MSL "
                  f"(min: {_v(a.get('cb_min_msl'),'m')}, typ: {_v(a.get('cb_typ_msl'),'m')}) "
                  f"margin: {_v(a.get('base_margin_over_peaks'),'m')} over {loc.get('peaks','?')}m")
-        L.append(f"- **Wind @850hPa**: {_v(a.get('wind_850hPa_ms'),'m/s')} "
-                 f"(window mean: {_v(a.get('sustained_wind_850_mean'),'m/s')})  |  "
+        L.append(f"- **Wind @700hPa**: {_v(a.get('wind_700hPa_ms'),'m/s')} "
+                 f"(window mean: {_v(a.get('sustained_wind_700_mean'),'m/s')})  |  "
                  f"**@700hPa**: {_v(a.get('wind_700hPa_ms'),'m/s')}")
         L.append(f"- **Gusts**: {_v(a.get('gusts_10m_ms'),'m/s')} "
                  f"(window mean: {_v(a.get('mean_gust_window'),'m/s')})  |  "
@@ -295,37 +295,43 @@ def generate_markdown_report(results, date, gen_time, locations_dict):
                              f"| {_v(pd.get('p90'))} | {_v(pd.get('spread'))} |")
             L.append("")
 
-        # Hourly profile
-        hp = r.get("hourly_analysis", {}).get("hourly_profile", [])
-        if hp:
-            L.append("### Hourly Profile")
-            L.append("| Hour | Src | T | Base | Cloud | CL/CM/CH | Precip | W10 | Gust | GF | W850 | Lapse | BL | CAPE | SW | W* |")
-            L.append("|------|-----|---|------|-------|----------|--------|-----|------|----|------|-------|----|------|----|----|")
-            for item in hp:
+        # Family hourly tables (ICON + ECMWF + GFS)
+        ha = r.get("hourly_analysis", {})
+        mps = ha.get("model_profiles", {})
+        icon_src = ha.get("icon_source")
+        ecmwf_src = ha.get("ecmwf_source")
+
+        def _render_md_family(model_key, label):
+            mp = mps.get(model_key)
+            if not mp:
+                return
+            L.append(f"### {label}")
+            L.append("| Hour | T | Base | Cloud | CL/CM/CH | Precip | W10 | Gust | GF | W850 | Lapse | CAPE | SW |")
+            L.append("|------|---|------|-------|----------|--------|-----|------|----|------|-------|----|-----|")
+            for item in mp:
                 cl = f"{_v(item.get('cloudcover_low'),'',0)}/{_v(item.get('cloudcover_mid'),'',0)}/{_v(item.get('cloudcover_high'),'',0)}"
-                src_tag = item.get('_src', '?')
-                ovr = item.get('_src_overrides')
-                if ovr:
-                    src_tag += '+'
                 L.append(
                     f"| {item['hour']} "
-                    f"| {src_tag} "
-                    f"| {_v(item['temp_2m'],'°C')} "
-                    f"| {_v(item['cloudbase_msl'],'m',0)} "
-                    f"| {_v(item['cloudcover'],'%',0)} "
+                    f"| {_v(item.get('temp_2m'),'°C')} "
+                    f"| {_v(item.get('cloudbase_msl'),'m',0)} "
+                    f"| {_v(item.get('cloudcover'),'%',0)} "
                     f"| {cl} "
-                    f"| {_v(item['precipitation'],'mm')} "
+                    f"| {_v(item.get('precipitation'),'mm')} "
                     f"| {_v(item.get('wind_10m'),'',1)} "
-                    f"| {_v(item['gusts'],'',1)} "
+                    f"| {_v(item.get('gusts'),'',1)} "
                     f"| {_v(item.get('gust_factor'),'',1)} "
-                    f"| {_v(item['wind_850'],'',1)} "
-                    f"| {_v(item['lapse_rate'],'',1)} "
-                    f"| {_v(item['bl_height'],'',0)} "
-                    f"| {_v(item['cape'],'',0)} "
-                    f"| {_v(item.get('shortwave_radiation'),'',0)} "
-                    f"| {_v(item.get('wstar'),'',2)} |"
+                    f"| {_v(item.get('wind_850'),'',1)} "
+                    f"| {_v(item.get('lapse_rate'),'',1)} "
+                    f"| {_v(item.get('cape'),'',0)} "
+                    f"| {_v(item.get('shortwave_radiation'),'',0)} |"
                 )
             L.append("")
+
+        if icon_src:
+            _render_md_family(icon_src, f"ICON ({icon_src})")
+        if ecmwf_src:
+            _render_md_family(ecmwf_src, f"ECMWF ({ecmwf_src})")
+        L.append("*Score uses averaged ICON+ECMWF values; GFS for BL/W*/LI/CIN.*\n")
 
         # MOSMIX
         mos = r.get("sources", {}).get("mosmix", {})

@@ -1,6 +1,6 @@
 # Приоритеты получения и использования данных
 
-**Версия:** 2.0
+**Версия:** 2.1
 
 ---
 
@@ -129,10 +129,10 @@ ALPTHERM            → обзорная карта термиков Austro Cont
 
 ---
 
-## 4. Приоритет ИСПОЛЬЗОВАНИЯ данных (Combined Hourly Profile)
+## 4. Приоритет ИСПОЛЬЗОВАНИЯ данных (Averaged Hourly Profile, v2.1)
 
-При построении combined hourly profile (08:00–18:00) для каждого часа и параметра
-берётся **первое ненулевое значение** из доступных слоёв.
+Для scoring строится **усреднённый профиль** (08:00–18:00), где общие параметры
+— среднее арифметическое best ICON и best ECMWF.
 
 ### 4.1 Определение доступных слоёв (`_find_available_sources`)
 
@@ -144,28 +144,26 @@ ECMWF family:  ecmwf_ifs025 | ecmwf_ifs04 | ecmwf_hres(legacy)
 GFS family:    gfs_seamless | gfs(legacy)
 ```
 
-### 4.2 Приоритет слоёв (для общих параметров)
+### 4.2 Усреднение (v2.1)
 
 ```
-Приоритет 1 (наивысший): Полученная ICON модель
-  ↓ если null
-Приоритет 2: Полученная ECMWF модель
-  ↓ если null
-Приоритет 3 (fallback): GFS
-```
+Общие параметры (temp, wind, cloud, precip, CAPE, SW, lapse...):
+  avg(Best ICON, Best ECMWF)
+  Если одна модель = None — берётся другая
 
-### 4.3 GFS-эксклюзивные параметры
-
-```
-ТОЛЬКО GFS (нет fallback, _pick_gfs):
+GFS-only (нет fallback):
   • boundary_layer_height  → нужен для W*
   • lifted_index           → LI @13 для VERY_UNSTABLE
   • convective_inhibition  → CIN
+
+ICON-only:
+  • updraft                → ICON D2 native (EU/Global = null)
+
+Расчётные поля (cloudbase, wstar, gust_factor):
+  Пересчитываются на усреднённых входных значениях
 ```
 
 Если GFS не скачался — все три = null, W* = null → thermal window пустое.
-
-### 4.4 Fallback для shortwave_radiation и cape
 
 ```
 1. Попытка: цепочка ICON > ECMWF > GFS (обычный приоритет)
@@ -252,11 +250,12 @@ Best ICON:  icon_d2 (или icon_eu / icon_global / icon_seamless)
       MOSMIX              → отдельный блок
                                   │
                                   ▼
-      MERGE (hourly profile, per hour × per field)
+      AVERAGING (v2.1: усреднённый профиль для scoring)
       ────────────────────────────────────────────
-      Best ICON  ──▶  Best ECMWF  ──▶  GFS
+      avg(Best ICON, Best ECMWF) → общие параметры
                                         │
                               GFS-only: BL, LI, CIN
+                              ICON-only: updraft
                                   │
                                   ▼
       PER-MODEL PROFILES (each model → separate table)
@@ -264,7 +263,7 @@ Best ICON:  icon_d2 (или icon_eu / icon_global / icon_seamless)
                                   ▼
       ANALYSIS
       ────────
-      Combined:   Thermal window → Flyable window → Flags → Positives
+      Combined:   Thermal window → Flyable window → Flags → Positives (на усреднённом профиле)
       Per-model:  assess_per_model → MODEL_DISAGREE check
       Agreement:  Best ECMWF vs Best ICON @13:00
       Ensemble:   spread → ENS_WIND_SPREAD / ENS_CAPE_SPREAD checks
@@ -278,5 +277,5 @@ Best ICON:  icon_d2 (или icon_eu / icon_global / icon_seamless)
                                   ▼
       REPORT
       ──────
-      JSON + Markdown + HTML viewer (combined + per-model tabs + ensemble + GeoSphere)
+      JSON + Markdown + HTML viewer (ICON/ECMWF/GFS tables + per-model tabs + ensemble + GeoSphere)
 ```

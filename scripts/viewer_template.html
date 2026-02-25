@@ -203,7 +203,7 @@ function agreeBar(score){
 function valColor(field,val,peaks){
   if(val==null)return'';
   switch(field){
-  case'wind_850':return val>5?'var(--nogo)':val>3.5?'var(--unlikely)':'';
+  case'wind_700':return val>5?'var(--nogo)':val>3.5?'var(--unlikely)':'';
   case'gusts':return val>10?'var(--nogo)':val>7?'var(--unlikely)':'';
   case'gust_factor':return val>7?'var(--nogo)':val>4?'var(--unlikely)':'';
   case'wind_10m':return val>8?'var(--nogo)':val>5?'var(--unlikely)':'';
@@ -272,7 +272,7 @@ function renderRef(){
   h+='<b>Thermal window</b> \u2014 hours with W*\u22651.5 m/s, precip\u22640.5 mm, base\u22651000m MSL, cloud<60%. ';
   h+='Base score: 0h=\u22126, 1\u20132h=\u22122, 3\u20134h=+1, 5\u20136h=+4, 7+h=+6.<br>';
   h+='<b>Base</b> \u2014 cloudbase MSL (m) from T\u2212Td. <b>CB min/typ</b> \u2014 min/median base over 09\u201318 window.<br>';
-  h+='<b>W850 mean</b> \u2014 sustained wind 850 hPa mean over window. >5 m/s = closed route risk.<br>';
+  h+='<b>W700 mean</b> \u2014 sustained wind 700 hPa mean over window. >5 m/s = closed route risk.<br>';
   h+='<b>Gusts max</b> \u2014 max gust over window. <b>GF max</b> \u2014 max gust factor (gust\u2212mean).<br>';
   h+='<b>Flyable</b> \u2014 longest continuous window with no precip, gusts\u226412, wind\u22648.<br>';
   h+='<b>CAPE</b> \u2014 J/kg. >300 thermals, >700 strong, >1500 storm risk.<br>';
@@ -291,7 +291,7 @@ function renderMainTable(locs){
   h+='<th>Location</th><th>Drive</th><th>Status</th><th class="n">Score</th>';
   h+='<th class="n">Base</th><th class="n">Margin</th>';
   h+='<th class="n">CB min</th><th class="n">CB typ</th>';
-  h+='<th class="n">W850 m</th><th class="n">Gust mx</th><th class="n">GF mx</th>';
+  h+='<th class="n">W700 m</th><th class="n">Gust mx</th><th class="n">GF mx</th>';
   h+='<th class="n">CAPE</th><th class="n">Lapse</th>';
   h+='<th class="n">BL</th><th class="n">W*</th>';
   h+='<th class="n">Cloud</th><th>Thermal</th><th>Confidence</th>';
@@ -316,7 +316,7 @@ function renderMainTable(locs){
     h+='<td class="n">'+fmt(a.base_margin_over_peaks,'',0)+'</td>';
     h+='<td class="n">'+fmt(a.cb_min_msl,'',0)+'</td>';
     h+='<td class="n">'+fmt(a.cb_typ_msl,'',0)+'</td>';
-    h+='<td class="n">'+fmtSrc(a.sustained_wind_850_mean,'',1,srcOf('wind_850hPa_ms'))+'</td>';
+    h+='<td class="n">'+fmtSrc(a.sustained_wind_700_mean,'',1,srcOf('wind_700hPa_ms'))+'</td>';
     h+='<td class="n">'+fmtSrc(a.mean_gust_window,'',1,srcOf('gusts_10m_ms'))+'</td>';
     h+='<td class="n">'+fmt(a.max_gust_factor_window,'',1)+'</td>';
     h+='<td class="n">'+fmtSrc(a.cape_J_per_kg,'',0,srcOf('cape_J_per_kg'))+'</td>';
@@ -347,7 +347,7 @@ function renderMainTable(locs){
   h+='<dt>Base</dt><dd>Cloudbase MSL @13:00 (m) \u2014 estimated from T\u2212Td spread + station elevation</dd>';
   h+='<dt>Margin</dt><dd>Base minus peak elevation (m). Positive = base above peaks</dd>';
   h+='<dt>CB min / CB typ</dt><dd>Minimum and typical (median) cloudbase over 09\u201318 window (m MSL)</dd>';
-  h+='<dt>W850 m</dt><dd>Mean wind 850 hPa over window (m/s). >5 = dangerous for XC closed routes</dd>';
+  h+='<dt>W700 m</dt><dd>Mean wind 700 hPa over window (m/s). >5 = dangerous for XC closed routes</dd>';
   h+='<dt>Gust mx</dt><dd>Maximum surface gust over window (m/s). >10 = critical</dd>';
   h+='<dt>GF mx</dt><dd>Max gust factor = gust \u2212 mean wind (m/s). >7 = turbulence risk</dd>';
   h+='<dt>CAPE</dt><dd>Convective energy @13:00 (J/kg). 300\u20131500 good, >1500 storm risk</dd>';
@@ -379,9 +379,9 @@ function renderCardBody(r){
     ['Base MSL @13',fmt(a.cloudbase_msl,'m',0)+srcTag('temp_2m'),''],
     ['Margin',fmt(a.base_margin_over_peaks,'m',0),''],
     ['CB min / typ',fmt(a.cb_min_msl,'',0)+' / '+fmt(a.cb_typ_msl,'',0),'over window'],
-    ['W850 mean',fmt(a.sustained_wind_850_mean,' m/s',1)+srcTag('wind_850hPa_ms'),'window mean'],
-    ['W850 @13',fmt(a.wind_850hPa_ms,' m/s',1)+srcTag('wind_850hPa_ms'),''],
+    ['W700 mean',fmt(a.sustained_wind_700_mean,' m/s',1)+srcTag('wind_700hPa_ms'),'window mean'],
     ['W700 @13',fmt(a.wind_700hPa_ms,' m/s',1)+srcTag('wind_700hPa_ms'),''],
+    ['W850 @13',fmt(a.wind_850hPa_ms,' m/s',1)+srcTag('wind_850hPa_ms'),''],
     ['Gusts @13',fmt(a.gusts_10m_ms,' m/s',1)+srcTag('gusts_10m_ms'),''],
     ['Gusts mean win',fmt(a.mean_gust_window,' m/s',1),''],
     ['GF max',fmt(a.max_gust_factor_window,' m/s',1),'gust\u2212mean'],
@@ -428,19 +428,31 @@ function renderCardBody(r){
     function sbFmt(v){return(v>0?'+':'')+v}
     h+='<h3>Score Breakdown</h3>';
     h+='<div class="score-box">';
+    /* Classify fired flags by category */
+    var CRIT_SET={SUSTAINED_WIND_700:1,GUSTS_HIGH:1,PRECIP_13:1,NO_FLYABLE_WINDOW:1};
+    var QUAL_SET={OVERCAST:1,STABLE:1,SHORT_WINDOW:1,GUST_FACTOR:1};
+    var DANG_SET={HIGH_CAPE:1,VERY_UNSTABLE:1,CAPE_RISING:1};
+    var critNames=[],baseNames=[],qualNames=[],dangNames=[],posNames=[];
+    flags.forEach(function(f){
+      if(CRIT_SET[f.tag])critNames.push(f.tag);
+      else if(f.tag==='LOW_BASE')baseNames.push(f.tag);
+      else if(QUAL_SET[f.tag])qualNames.push(f.tag);
+      else if(DANG_SET[f.tag])dangNames.push(f.tag);
+    });
+    pos.forEach(function(p){if(p.tag==='VERY_HIGH_BASE')return;posNames.push(p.tag)});
     h+='<div class="sb-line"><span class="sb-lbl">Thermal window: '+twh+'h \u2192 base</span><span class="sb-val '+sbCls(bs)+'">'+sbFmt(bs)+'</span></div>';
-    if(nc)h+='<div class="sb-line"><span class="sb-lbl">Critical flags: '+nc+' \u00d7 (\u22123)</span><span class="sb-val sb-neg">\u2212'+(nc*3)+'</span></div>';
-    if(nb)h+='<div class="sb-line"><span class="sb-lbl">Low base: '+nb+' \u00d7 (\u22122)</span><span class="sb-val sb-neg">\u2212'+(nb*2)+'</span></div>';
-    if(nq)h+='<div class="sb-line"><span class="sb-lbl">Quality flags: '+nq+' \u00d7 (\u22121)</span><span class="sb-val sb-neg">\u2212'+nq+'</span></div>';
-    if(nd)h+='<div class="sb-line"><span class="sb-lbl">Danger flags: '+nd+' \u00d7 (\u22121)</span><span class="sb-val sb-neg">\u2212'+nd+'</span></div>';
-    if(np)h+='<div class="sb-line"><span class="sb-lbl">Positives: '+np+' \u00d7 (+1)</span><span class="sb-val sb-pos">+'+np+'</span></div>';
-    if(nvhb)h+='<div class="sb-line"><span class="sb-lbl">Very high base: '+nvhb+' \u00d7 (+2)</span><span class="sb-val sb-pos">+'+(nvhb*2)+'</span></div>';
+    if(nc)h+='<div class="sb-line"><span class="sb-lbl">Critical \u00d7'+nc+': <small>'+critNames.join(', ')+'</small></span><span class="sb-val sb-neg">\u2212'+(nc*3)+'</span></div>';
+    if(nb)h+='<div class="sb-line"><span class="sb-lbl">Low base \u00d7'+nb+': <small>'+baseNames.join(', ')+'</small></span><span class="sb-val sb-neg">\u2212'+(nb*2)+'</span></div>';
+    if(nq)h+='<div class="sb-line"><span class="sb-lbl">Quality \u00d7'+nq+': <small>'+qualNames.join(', ')+'</small></span><span class="sb-val sb-neg">\u2212'+nq+'</span></div>';
+    if(nd)h+='<div class="sb-line"><span class="sb-lbl">Danger \u00d7'+nd+': <small>'+dangNames.join(', ')+'</small></span><span class="sb-val sb-neg">\u2212'+nd+'</span></div>';
+    if(np)h+='<div class="sb-line"><span class="sb-lbl">Positives \u00d7'+np+': <small>'+posNames.join(', ')+'</small></span><span class="sb-val sb-pos">+'+np+'</span></div>';
+    if(nvhb)h+='<div class="sb-line"><span class="sb-lbl">Very high base \u00d7'+nvhb+'</span><span class="sb-val sb-pos">+'+(nvhb*2)+'</span></div>';
     h+='<div class="sb-line sb-total"><span>Total score</span><span class="sb-val">'+(a.score!=null?a.score:'\u2014')+' \u2192 '+badge(a.status)+'</span></div>';
     h+='</div>';
     h+='<details class="ref-details"><summary class="ref-summary"><span class="ref-title">Legend</span><span class="ref-arrow">\u25b8</span></summary>';
     h+='<div class="ens-legend">';
     h+='<b>Base score</b> \u2014 from thermal window duration: 0h=\u22126, 1\u20132h=\u22122, 3\u20134h=+1, 5\u20136h=+4, 7h+=+6<br>';
-    h+='<b>Critical</b> (\u00d7\u22123) \u2014 SUSTAINED_WIND_850, GUSTS_HIGH, PRECIP_13, NO_FLYABLE_WINDOW<br>';
+    h+='<b>Critical</b> (\u00d7\u22123) \u2014 SUSTAINED_WIND_700, GUSTS_HIGH, PRECIP_13, NO_FLYABLE_WINDOW<br>';
     h+='<b>Low base</b> (\u00d7\u22122) \u2014 min cloudbase margin < 1000m over peaks<br>';
     h+='<b>Quality</b> (\u00d7\u22121) \u2014 OVERCAST, STABLE, SHORT_WINDOW, GUST_FACTOR<br>';
     h+='<b>Danger</b> (\u00d7\u22121) \u2014 HIGH_CAPE, CAPE_RISING, VERY_UNSTABLE<br>';
@@ -449,57 +461,91 @@ function renderCardBody(r){
     h+='</div></details>';
   }
 
-  /* Model Agreement + Per-Model Assessment (merged) */
+  /* Hourly analysis data (shared by Model Agreement + Family Tables) */
+  var ha=r.hourly_analysis||{};
+  var mps=ha.model_profiles||{};
+  var iconSrc=ha.icon_source;
+  var ecmwfSrc=ha.ecmwf_source;
+  var tws=a.thermal_window_start,twe=a.thermal_window_end,twp=a.thermal_window_peak;
+  var twsI=tws?parseInt(tws):99,tweI=twe?parseInt(twe):-1;
+
+  /* Model Agreement (with per-model assessment columns) */
   var ma=a.model_agreement||{};
   var pma=a.per_model_assessment||{};
   var pmaKeys=Object.keys(pma);
   var haAgreement=ma.agreement_score!=null;
-  var hasPma=pmaKeys.length>1;
+  var hasPma=pmaKeys.length>0;
   if(haAgreement||hasPma){
-    h+='<h3>Model Comparison';
+    h+='<h3>Model Agreement';
     if(haAgreement) h+=': <span class="'+confClass(ma.confidence)+'">'+esc(ma.confidence)+'</span>'+agreeBar(ma.agreement_score);
     h+='</h3>';
 
-    /* Per-Model Assessment rows */
-    if(hasPma){
-      h+='<div class="table-wrap"><table class="ctbl">';
-      h+='<tr><th>Model</th><th class="n">Thermal h</th><th class="n">Flyable h</th><th>Status</th></tr>';
-      pmaKeys.forEach(function(mk){
-        var md=pma[mk];
-        h+='<tr><td><span class="model-pill">'+esc(modelShort(mk)+': '+(md.model_label||mk))+'</span></td>';
-        h+='<td class="n">'+fmt(md.thermal_hours)+'</td>';
-        h+='<td class="n">'+fmt(md.flyable_hours)+'</td>';
-        h+='<td>'+badge(md.status)+'</td></tr>';
-      });
-      h+='</table></div>';
+    /* Build GFS @13 lookup from model_profiles */
+    var gfsAt13={};
+    var gfsKey=null;
+    ['gfs_seamless','gfs'].forEach(function(k){if(!gfsKey&&mps[k])gfsKey=k});
+    if(gfsKey&&mps[gfsKey]){
+      mps[gfsKey].forEach(function(item){if(item.hour==='13:00')gfsAt13=item});
     }
+    var gfsField={temperature_2m:'temp_2m',windspeed_10m:'wind_10m',cloudcover:'cloudcover',
+      precipitation:'precipitation',cape:'cape',windspeed_850hPa:'wind_850',windgusts_10m:'gusts'};
 
-    /* Model Agreement details */
+    /* Find which pma keys map to ICON/ECMWF/GFS */
+    var iconPma=pma[iconSrc]||null;
+    var ecmwfPma=pma[ecmwfSrc]||null;
+    var gfsPma=gfsKey?pma[gfsKey]||null:null;
+
+    h+='<div class="table-wrap"><table class="ctbl">';
+    h+='<tr><th></th><th class="n">ICON</th><th class="n">ECMWF</th><th class="n">GFS</th><th class="n">Diff</th><th>Agree</th></tr>';
+
+    /* Per-model assessment rows */
+    h+='<tr><td><b>Thermal hours</b></td>';
+    h+='<td class="n">'+(iconPma?fmt(iconPma.thermal_hours):'\u2014')+'</td>';
+    h+='<td class="n">'+(ecmwfPma?fmt(ecmwfPma.thermal_hours):'\u2014')+'</td>';
+    h+='<td class="n">'+(gfsPma?fmt(gfsPma.thermal_hours):'\u2014')+'</td>';
+    h+='<td></td><td></td></tr>';
+
+    h+='<tr><td><b>Flyable hours</b></td>';
+    h+='<td class="n">'+(iconPma?fmt(iconPma.flyable_hours):'\u2014')+'</td>';
+    h+='<td class="n">'+(ecmwfPma?fmt(ecmwfPma.flyable_hours):'\u2014')+'</td>';
+    h+='<td class="n">'+(gfsPma?fmt(gfsPma.flyable_hours):'\u2014')+'</td>';
+    h+='<td></td><td></td></tr>';
+
+    h+='<tr><td><b>Status</b></td>';
+    h+='<td class="n">'+(iconPma?badge(iconPma.status):'\u2014')+'</td>';
+    h+='<td class="n">'+(ecmwfPma?badge(ecmwfPma.status):'\u2014')+'</td>';
+    h+='<td class="n">'+(gfsPma?badge(gfsPma.status):'\u2014')+'</td>';
+    h+='<td></td><td></td></tr>';
+
+    /* Model agreement comparison rows @13:00 */
     if(haAgreement){
       var det=ma.details||{};
-      if(Object.keys(det).length){
-        h+='<div style="margin-top:0.5rem"><b>ECMWF vs ICON @13:00</b></div>';
-        h+='<div class="table-wrap"><table class="ctbl">';
-        h+='<tr><th>Param</th><th class="n">ECMWF</th><th class="n">ICON</th><th class="n">Diff</th><th>Agree</th></tr>';
-        Object.keys(det).forEach(function(p){
+      var detKeys=Object.keys(det);
+      if(detKeys.length){
+        h+='<tr><td colspan="6" style="padding:0.2rem 0;border-bottom:1px solid var(--border)"><small><b>ECMWF vs ICON @13:00</b></small></td></tr>';
+        detKeys.forEach(function(p){
           var d=det[p];
-          h+='<tr><td>'+esc(p)+'</td><td class="n">'+fmt(d.ecmwf)+'</td><td class="n">'+fmt(d.icon)+'</td>';
-          h+='<td class="n">'+fmt(d.diff)+'</td><td>'+(d.agree?'\u2713':'\u2717')+'</td></tr>';
+          var gv=gfsAt13[gfsField[p]];
+          h+='<tr><td>'+esc(p)+'</td>';
+          h+='<td class="n">'+fmt(d.icon)+'</td>';
+          h+='<td class="n">'+fmt(d.ecmwf)+'</td>';
+          h+='<td class="n">'+(gv!=null?fmt(gv,'',1):'\u2014')+'</td>';
+          h+='<td class="n">'+fmt(d.diff)+'</td>';
+          h+='<td>'+(d.agree?'\u2713':'\u2717')+'</td></tr>';
         });
-        h+='</table></div>';
       }
     }
 
-    /* Merged legend */
+    h+='</table></div>';
+
+    /* Legend */
     h+='<details class="ref-details"><summary class="ref-summary"><span class="ref-title">Legend</span><span class="ref-arrow">\u25b8</span></summary>';
     h+='<div class="ens-legend">';
-    if(hasPma){
-      h+='<b>Thermal h</b> \u2014 hours within thermal window (W*\u22651.5 m/s) per model<br>';
-      h+='<b>Flyable h</b> \u2014 hours with acceptable wind + gust conditions<br>';
-      h+='<b>Status</b> \u2014 per-model flyability verdict (GO / MAYBE / UNLIKELY / NO-GO)<br>';
-    }
+    h+='<b>Thermal hours</b> \u2014 hours with W*\u22651.5 m/s per model<br>';
+    h+='<b>Flyable hours</b> \u2014 hours with acceptable wind + gust conditions<br>';
+    h+='<b>Status</b> \u2014 per-model flyability verdict (GO / MAYBE / UNLIKELY / NO-GO)<br>';
     if(haAgreement){
-      if(hasPma) h+='<hr style="border:none;border-top:1px solid var(--border);margin:0.4rem 0">';
+      h+='<hr style="border:none;border-top:1px solid var(--border);margin:0.4rem 0">';
       h+='Compares ECMWF vs ICON at 13:00 local. Tolerances: T \u00b12\u00b0C, wind \u00b12 m/s, gusts \u00b13 m/s, cloud \u00b120%, precip \u00b10.5 mm, CAPE \u00b1200 J/kg.<br>';
       h+='Score = fraction within tolerance. <b>HIGH</b> \u226580%, <b>MEDIUM</b> \u226550%, <b>LOW</b> &lt;50%.';
     }
@@ -540,27 +586,27 @@ function renderCardBody(r){
     h+='</dl></details>';
   }
 
-  /* Hourly profile */
-  var hp=(r.hourly_analysis||{}).hourly_profile||[];
-  if(hp.length){
-    h+='<h3>Hourly Profile (08:00\u201318:00 local)</h3>';
+  /* ── Family Hourly Tables (ICON + ECMWF + GFS) ── */
+
+  function renderFamilyTable(modelKey, extraCols){
+    var mp=mps[modelKey];
+    if(!mp||!mp.length)return;
+    var label=(MODEL_META[modelKey]?MODEL_META[modelKey].name:modelKey);
+    var short=modelShort(modelKey);
+    h+='<h3><span class="model-pill">'+esc(short)+': '+esc(label)+'</span> \u2014 Hourly (08:00\u201318:00)</h3>';
     h+='<div class="table-wrap"><table class="htbl">';
-    h+='<tr><th>Hour</th><th>Src</th><th>T</th><th>Dew</th><th>Base</th><th>Cloud</th><th>CL/CM/CH</th>';
+    h+='<tr><th>Hour</th><th>T</th><th>Dew</th><th>Base</th><th>Cloud</th><th>CL/CM/CH</th>';
     h+='<th>Prcp</th><th>W10</th><th>Gust</th><th>GF</th><th>W850</th><th>W700</th>';
-    h+='<th>RH850</th><th>RH700</th><th>Lapse</th><th>BL</th><th>CAPE</th><th>SW</th><th>Updr</th><th>W*</th></tr>';
-    var tws=a.thermal_window_start,twe=a.thermal_window_end,twp=a.thermal_window_peak;
-    var twsI=tws?parseInt(tws):99,tweI=twe?parseInt(twe):-1;
-    hp.forEach(function(item){
+    h+='<th>RH850</th><th>RH700</th><th>Lapse</th><th>CAPE</th><th>SW</th>';
+    if(extraCols.updraft)h+='<th>Updr</th>';
+    if(extraCols.gfs)h+='<th>BL</th><th>LI</th><th>CIN</th><th>W*</th>';
+    h+='</tr>';
+    mp.forEach(function(item){
       var hrI=parseInt(item.hour);
       var cls='';
       if(hrI>=twsI&&hrI<=tweI){cls=item.hour===twp?' class="tw-peak"':' class="tw"'}
       h+='<tr'+cls+'>';
       h+='<td><strong>'+item.hour+'</strong></td>';
-      var srcShort=modelShort(item._src);
-      var srcTitle=modelName(item._src);
-      var ovr=item._src_overrides;
-      if(ovr){var ovrKeys=Object.keys(ovr);srcTitle+=' (+'+ovrKeys.map(function(k){return k+':'+modelShort(ovr[k])}).join(', ')+')';srcShort+='+'}
-      h+='<td><span class="sv" title="'+esc(srcTitle)+'">'+esc(srcShort)+'</span></td>';
       h+='<td>'+fmt(item.temp_2m,'',1)+'</td>';
       h+='<td>'+fmt(item.dewpoint,'',1)+'</td>';
       h+='<td>'+fmtC(item.cloudbase_msl,'',0,'cloudbase_msl',peaks)+'</td>';
@@ -571,24 +617,47 @@ function renderCardBody(r){
       h+='<td>'+fmtC(item.wind_10m,'',1,'wind_10m')+'</td>';
       h+='<td>'+fmtC(item.gusts,'',1,'gusts')+'</td>';
       h+='<td>'+fmtC(item.gust_factor,'',1,'gust_factor')+'</td>';
-      h+='<td>'+fmtC(item.wind_850,'',1,'wind_850')+'</td>';
-      h+='<td>'+fmt(item.wind_700,'',1)+'</td>';
+      h+='<td>'+fmt(item.wind_850,'',1)+'</td>';
+      h+='<td>'+fmtC(item.wind_700,'',1,'wind_700')+'</td>';
       h+='<td>'+fmt(item.rh_850,'',0)+'</td>';
       h+='<td>'+fmt(item.rh_700,'',0)+'</td>';
       h+='<td>'+fmtC(item.lapse_rate,'',1,'lapse_rate')+'</td>';
-      h+='<td>'+fmtC(item.bl_height,'',0,'bl_height')+'</td>';
       h+='<td>'+fmtC(item.cape,'',0,'cape')+'</td>';
       h+='<td>'+fmtC(item.shortwave_radiation,'',0,'shortwave_radiation')+'</td>';
-      h+='<td>'+fmtC(item.updraft,'',2,'updraft')+'</td>';
-      h+='<td>'+fmtC(item.wstar,'',2,'wstar')+'</td>';
+      if(extraCols.updraft)h+='<td>'+fmtC(item.updraft,'',2,'updraft')+'</td>';
+      if(extraCols.gfs){
+        h+='<td>'+fmtC(item.bl_height,'',0,'bl_height')+'</td>';
+        h+='<td>'+fmt(item.lifted_index,'',1)+'</td>';
+        h+='<td>'+fmt(item.cin,'',0)+'</td>';
+        h+='<td>'+fmtC(item.wstar,'',2,'wstar')+'</td>';
+      }
       h+='</tr>';
     });
     h+='</table></div>';
-    /* Hourly profile legend */
+  }
+
+  /* Render ICON table */
+  if(iconSrc&&mps[iconSrc]){
+    renderFamilyTable(iconSrc,{updraft:true,gfs:false});
+  }
+  /* Render ECMWF table */
+  if(ecmwfSrc&&mps[ecmwfSrc]){
+    renderFamilyTable(ecmwfSrc,{updraft:false,gfs:false});
+  }
+  /* Render GFS table (if available) */
+  var gfsSrc=null;
+  ['gfs_seamless','gfs'].forEach(function(k){if(!gfsSrc&&mps[k])gfsSrc=k});
+  if(gfsSrc&&mps[gfsSrc]){
+    renderFamilyTable(gfsSrc,{updraft:false,gfs:true});
+  }
+
+  /* Shared legend for family tables */
+  if(iconSrc||ecmwfSrc){
     h+='<details class="ref-details" style="margin-top:0.3rem"><summary class="ref-summary">';
     h+='<span class="ref-title"><span>\u2139\ufe0f</span><span>Column legend</span></span>';
     h+='<span class="ref-arrow"></span></summary>';
     h+='<dl class="ens-legend">';
+    h+='<dt>Scoring</dt><dd>Score uses <b>mean of ICON + ECMWF</b> when both have data, single-model value otherwise. GFS provides BL/LI/CIN/W*.</dd>';
     h+='<dt>T</dt><dd>Temperature 2m (\u00b0C)</dd>';
     h+='<dt>Dew</dt><dd>Dewpoint 2m (\u00b0C) \u2014 lower = drier air, higher cloudbase</dd>';
     h+='<dt>Base</dt><dd>Cloudbase MSL (m) estimated from T\u2212Td. <span style="color:var(--nogo)">&lt;1000 red</span>, <span style="color:var(--go)">&gt;3500 green</span></dd>';
@@ -598,25 +667,26 @@ function renderCardBody(r){
     h+='<dt>W10</dt><dd>Wind 10m (m/s). <span style="color:var(--nogo)">&gt;8 red</span>, <span style="color:var(--unlikely)">&gt;5 orange</span></dd>';
     h+='<dt>Gust</dt><dd>Gusts 10m (m/s). <span style="color:var(--nogo)">&gt;10 red</span>, <span style="color:var(--unlikely)">&gt;7 orange</span></dd>';
     h+='<dt>GF</dt><dd>Gust factor = gust \u2212 mean wind (m/s). <span style="color:var(--nogo)">&gt;7 red</span>, <span style="color:var(--unlikely)">&gt;4 orange</span></dd>';
-    h+='<dt>W850</dt><dd>Wind 850 hPa (~1500m) \u2014 gradient wind (m/s). <span style="color:var(--nogo)">&gt;5 red</span>, <span style="color:var(--unlikely)">&gt;3.5 orange</span></dd>';
-    h+='<dt>W700</dt><dd>Wind 700 hPa (~3000m) (m/s)</dd>';
+    h+='<dt>W850</dt><dd>Wind 850 hPa (~1500m) \u2014 gradient wind (m/s)</dd>';
+    h+='<dt>W700</dt><dd>Wind 700 hPa (~3000m) (m/s). <span style="color:var(--nogo)">&gt;5 red</span>, <span style="color:var(--unlikely)">&gt;3.5 orange</span>. Used for scoring.</dd>';
     h+='<dt>RH850/RH700</dt><dd>Relative humidity at pressure levels (%). Low = dry, good for thermals</dd>';
     h+='<dt>Lapse</dt><dd>Temperature gradient 850\u2192700 hPa (\u00b0C/km). <span style="color:var(--go)">&gt;7 strong</span>, <span style="color:var(--unlikely)">&lt;5.5 weak</span>. Dry adiabatic \u2248 9.8</dd>';
-    h+='<dt>BL</dt><dd>Boundary layer height (m, GFS). <span style="color:var(--go)">&gt;1500 green</span>. Indicates mixing depth</dd>';
+    h+='<dt>BL</dt><dd>Boundary layer height (m, GFS only). <span style="color:var(--go)">&gt;1500 green</span>. Indicates mixing depth</dd>';
     h+='<dt>CAPE</dt><dd>Convective Available Potential Energy (J/kg). 300\u20131500 good thermals, <span style="color:var(--nogo)">&gt;1500 storm risk</span></dd>';
     h+='<dt>SW</dt><dd>Shortwave radiation (W/m\u00b2). <span style="color:var(--go)">&gt;600 strong solar input</span></dd>';
-    h+='<dt>Updr</dt><dd>ICON model updraft (m/s) \u2014 direct convective vertical velocity from ICON weather model. <span style="color:var(--go)">\u22651.5 strong</span>, \u22650.5 moderate. Only ICON models.</dd>';
-    h+='<dt>W*</dt><dd>Deardorff convective velocity (m/s) \u2014 estimated from BL height + solar radiation + temperature. <span style="color:var(--go)">\u22651.5 strong thermals</span>, \u22651.0 light thermals</dd>';
-    h+='<dt style="margin-top:0.3rem">Highlighted rows</dt><dd>Green background = thermal window (W*\u22651.5 + base\u22651000m + precip\u22640.5 + cloud<70%)</dd>';
+    h+='<dt>Updr</dt><dd>ICON model updraft (m/s) \u2014 convective vertical velocity. <span style="color:var(--go)">\u22651.5 strong</span>. ICON only.</dd>';
+    h+='<dt>LI</dt><dd>Lifted Index (GFS only). <span style="color:var(--nogo)">&lt;\u22124 storm risk</span></dd>';
+    h+='<dt>CIN</dt><dd>Convective Inhibition (J/kg, GFS only). More negative = harder to trigger thermals</dd>';
+    h+='<dt>W*</dt><dd>Deardorff convective velocity (m/s) \u2014 from BL height + SW + T (GFS only). <span style="color:var(--go)">\u22651.5 strong thermals</span></dd>';
+    h+='<dt style="margin-top:0.3rem">Highlighted rows</dt><dd>Green = thermal window hours (from averaged ICON+ECMWF profile: W*\u22651.5 + base\u22651000m + precip\u22640.5 + cloud<70%)</dd>';
     h+='</dl></details>';
   }
 
-  /* Per-model hourly tables (tabbed) */
-  var mps=(r.hourly_analysis||{}).model_profiles||{};
-  var mpKeys=Object.keys(mps);
-  if(mpKeys.length>1){
+  /* Per-model hourly tables (tabbed) — shows all remaining models */
+  var mpKeys=Object.keys(mps).filter(function(k){return k!==iconSrc&&k!==ecmwfSrc&&k!==gfsSrc});
+  if(mpKeys.length>0){
     var mpId='mp_'+Math.random().toString(36).substr(2,6);
-    h+='<h3>Per-Model Hourly (08:00\u201318:00)</h3>';
+    h+='<h3>Other Models (08:00\u201318:00)</h3>';
     h+='<div class="model-tab-bar">';
     mpKeys.forEach(function(mk,idx){
       h+='<div class="model-tab'+(idx===0?' active':'')+'" onclick="(function(el){';
@@ -660,9 +730,8 @@ function renderCardBody(r){
     });
     h+='<details class="ref-details"><summary class="ref-summary"><span class="ref-title">Legend</span><span class="ref-arrow">\u25b8</span></summary>';
     h+='<div class="ens-legend">';
-    h+='Same columns as main hourly profile, but each tab shows data from a single model independently.<br>';
-    h+='<b>Green rows</b> \u2014 thermal window hours for this model (W*\u22651.5 + base\u22651000m + precip\u22640.5 + cloud<70%).<br>';
-    h+='Comparing tabs reveals which model is more optimistic/pessimistic.';
+    h+='Additional model data not shown in the main ICON/ECMWF/GFS tables above.<br>';
+    h+='<b>Green rows</b> \u2014 hours where W*\u22651.5 for this individual model.';
     h+='</div></details>';
   }
 
