@@ -334,10 +334,13 @@ def assess_location(loc_key: str, loc: dict, date: str, sources_list: list) -> d
     li = result["sources"].get(gfs_src, {}).get("at_13_local", {}).get("lifted_index") if gfs_src else None
     if li is not None:
         _at13_src["lifted_index"] = gfs_src
+    # CIN (GFS only — ECMWF/ICON accept param but return null)
     cin = result["sources"].get(gfs_src, {}).get("at_13_local", {}).get("convective_inhibition") if gfs_src else None
     if cin is not None:
         _at13_src["cin_J_per_kg"] = gfs_src
     ws_v = estimate_wstar(bl_h, sw, t2m)
+    # Updraft: ICON-native convective updraft velocity
+    updraft_13 = _best13("updraft", "updraft_ms")
 
     bm = (cbm - loc["peaks"]) if cbm is not None else None
 
@@ -361,6 +364,7 @@ def assess_location(loc_key: str, loc: dict, date: str, sources_list: list) -> d
         "cape_J_per_kg": cape, "cin_J_per_kg": cin, "lifted_index": li,
         "boundary_layer_height_m": bl_h,
         "lapse_rate_C_per_km": lr, "wstar_ms": ws_v,
+        "updraft_ms": updraft_13,
         "cloudcover_pct": cloud,
         "cloudcover_low_pct": _best13("cloudcover_low", "cloudcover_low_pct"),
         "cloudcover_mid_pct": _best13("cloudcover_mid", "cloudcover_mid_pct"),

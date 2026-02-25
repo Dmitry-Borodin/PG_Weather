@@ -47,8 +47,8 @@ ECMWF_PARAMS = [
     "windspeed_700hPa", "winddirection_700hPa",
 ]
 
-ICON_PARAMS = list(ECMWF_PARAMS)
-ICON_D2_PARAMS = list(ECMWF_PARAMS)
+ICON_PARAMS = list(ECMWF_PARAMS) + ["updraft"]
+ICON_D2_PARAMS = list(ECMWF_PARAMS) + ["updraft"]
 
 GFS_PARAMS = list(ECMWF_PARAMS) + [
     "boundary_layer_height",

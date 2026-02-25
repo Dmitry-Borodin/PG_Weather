@@ -213,6 +213,7 @@ function valColor(field,val,peaks){
   case'cape':return val>1500?'var(--nogo)':(val>=300&&val<=1500)?'var(--go)':'';
   case'cloudbase_msl':return val<1000?'var(--nogo)':val>3500?'var(--go)':'';
   case'wstar':return val>=1.5?'var(--go)':val>=1.0?'#059669':'';
+  case'updraft':return val>=1.5?'var(--go)':val>=0.5?'#059669':'';
   case'lifted_index':return val<-4?'var(--nogo)':'';
   case'bl_height':return val>1500?'var(--go)':'';
   case'shortwave_radiation':return val>600?'var(--go)':'';
@@ -268,7 +269,7 @@ function renderRef(){
   h+='<div style="font-size:0.75rem;color:var(--muted);margin:0.5rem 0 0;line-height:1.8">';
   h+='<b>Score v2.0</b> \u2014 base from thermal window hours, then: critical \u00d7(\u22123), LOW_BASE \u00d7(\u22122), quality/danger \u00d7(\u22121), positive \u00d7(+1), VERY_HIGH_BASE \u00d7(+2). ';
   h+='Thresholds: \u2264\u22125 NO\u2011GO, \u2264\u22122 UNLIKELY, \u22641 MAYBE, \u22644 GO, \u22655 STRONG.<br>';
-  h+='<b>Thermal window</b> \u2014 hours with W*\u22651.0, precip\u22640.5, base\u22651000m MSL, cloud<60%. ';
+  h+='<b>Thermal window</b> \u2014 hours with W*\u22651.5 m/s, precip\u22640.5 mm, base\u22651000m MSL, cloud<60%. ';
   h+='Base score: 0h=\u22126, 1\u20132h=\u22122, 3\u20134h=+1, 5\u20136h=+4, 7+h=+6.<br>';
   h+='<b>Base</b> \u2014 cloudbase MSL (m) from T\u2212Td. <b>CB min/typ</b> \u2014 min/median base over 09\u201318 window.<br>';
   h+='<b>W850 mean</b> \u2014 sustained wind 850 hPa mean over window. >5 m/s = closed route risk.<br>';
@@ -338,6 +339,25 @@ function renderMainTable(locs){
     return'<span class="model-pill">'+esc(m.short)+': '+esc(m.name)+' ('+esc(m.api)+')</span>';
   }).join(' ');
   h+='<div style="margin-top:0.3rem">'+pills+'</div>';
+  /* Summary table legend */
+  h+='<details class="ref-details" style="margin-top:0.3rem"><summary class="ref-summary">';
+  h+='<span class="ref-title"><span>\u2139\ufe0f</span><span>Column legend</span></span>';
+  h+='<span class="ref-arrow"></span></summary>';
+  h+='<dl class="ens-legend">';
+  h+='<dt>Base</dt><dd>Cloudbase MSL @13:00 (m) \u2014 estimated from T\u2212Td spread + station elevation</dd>';
+  h+='<dt>Margin</dt><dd>Base minus peak elevation (m). Positive = base above peaks</dd>';
+  h+='<dt>CB min / CB typ</dt><dd>Minimum and typical (median) cloudbase over 09\u201318 window (m MSL)</dd>';
+  h+='<dt>W850 m</dt><dd>Mean wind 850 hPa over window (m/s). >5 = dangerous for XC closed routes</dd>';
+  h+='<dt>Gust mx</dt><dd>Maximum surface gust over window (m/s). >10 = critical</dd>';
+  h+='<dt>GF mx</dt><dd>Max gust factor = gust \u2212 mean wind (m/s). >7 = turbulence risk</dd>';
+  h+='<dt>CAPE</dt><dd>Convective energy @13:00 (J/kg). 300\u20131500 good, >1500 storm risk</dd>';
+  h+='<dt>Lapse</dt><dd>Lapse rate 850\u2192700 hPa @13:00 (\u00b0C/km). >7 strong, <5.5 weak</dd>';
+  h+='<dt>BL</dt><dd>Boundary layer height @13:00 (m, GFS). >1500 = deep mixing</dd>';
+  h+='<dt>W*</dt><dd>Deardorff convective velocity @13:00 (m/s). \u22651.5 strong thermals</dd>';
+  h+='<dt>Cloud</dt><dd>Total cloud cover @13:00 (%)</dd>';
+  h+='<dt>Thermal</dt><dd>Thermal window hours (W*\u22651.5 + base\u22651000m + cloud<60% + precip\u22640.5)</dd>';
+  h+='<dt>Confidence</dt><dd>Model agreement ECMWF vs ICON. HIGH\u226580%, MEDIUM\u226550%, LOW<50%</dd>';
+  h+='</dl></details>';
   h+='</div>';
   return h;
 }
@@ -370,14 +390,15 @@ function renderCardBody(r){
     ['CIN',fmt(a.cin_J_per_kg,' J/kg',0)+srcTag('cin_J_per_kg'),''],
     ['Lapse',fmt(a.lapse_rate_C_per_km,' \u00b0C/km',1)+srcTag('t850'),'850\u2192700'],
     ['BL height',fmt(a.boundary_layer_height_m,'m',0)+srcTag('boundary_layer_height_m'),''],
-    ['W*',fmt(a.wstar_ms,' m/s',2),''],
+    ['W*',fmt(a.wstar_ms,' m/s',2),'Deardorff'],
+    ['Updraft',fmt(a.updraft_ms,' m/s',2)+srcTag('updraft_ms'),'ICON native'],
     ['Cloud',fmt(a.cloudcover_pct,'%',0)+srcTag('cloudcover_pct'),''],
     ['CL/CM/CH',fmt(a.cloudcover_low_pct,'',0)+'/'+fmt(a.cloudcover_mid_pct,'',0)+'/'+fmt(a.cloudcover_high_pct,'',0),'low/mid/high'],
     ['Precip',fmt(a.precipitation_mm,' mm',1)+srcTag('precipitation_mm'),''],
     ['SW rad',fmt(a.shortwave_radiation,' W/m\u00b2',0)+srcTag('shortwave_radiation'),''],
     ['RH 2m/850/700',fmt(a.relative_humidity_2m,'',0)+'/'+fmt(a.relative_humidity_850,'',0)+'/'+fmt(a.relative_humidity_700,'',0),'%'],
     ['Flyable window',fw,'continuous'],
-    ['Thermal window',tw,'W*-based'],
+    ['Thermal window',tw,'W*\u22651.5'],
   ];
   h+='<div class="metrics">';
   metrics.forEach(function(m){
@@ -432,6 +453,14 @@ function renderCardBody(r){
         h+='<td class="n">'+fmt(d.diff)+'</td><td>'+(d.agree?'\u2713':'\u2717')+'</td></tr>';
       });
       h+='</table></div>';
+      /* Model agreement legend */
+      h+='<details class="ref-details" style="margin-top:0.3rem"><summary class="ref-summary">';
+      h+='<span class="ref-title"><span>\u2139\ufe0f</span><span>Agreement details</span></span>';
+      h+='<span class="ref-arrow"></span></summary>';
+      h+='<div style="font-size:0.76rem;color:var(--muted);line-height:1.6;margin:0.3rem 0">';
+      h+='Compares ECMWF vs ICON at 13:00 local. Per-parameter tolerances: T \u00b12\u00b0C, wind \u00b12 m/s, gusts \u00b13 m/s, cloud \u00b120%, precip \u00b10.5 mm, CAPE \u00b1200 J/kg.<br>';
+      h+='Score = fraction of parameters within tolerance. <b>HIGH</b> \u226580%, <b>MEDIUM</b> \u226550%, <b>LOW</b> &lt;50%.';
+      h+='</div></details>';
     }
   }
 
@@ -486,6 +515,13 @@ function renderCardBody(r){
       h+='<td>'+badge(md.status)+'</td></tr>';
     });
     h+='</table></div>';
+    h+='<details class="ref-details"><summary class="ref-summary"><span class="ref-title">Legend</span><span class="ref-arrow">▸</span></summary>';
+    h+='<div class="ens-legend">';
+    h+='<b>Model</b> — weather model variant used for this assessment<br>';
+    h+='<b>Thermal h</b> — number of hours within the thermal window (W*≥1.5 m/s)<br>';
+    h+='<b>Flyable h</b> — hours with acceptable wind + gust conditions during thermal window<br>';
+    h+='<b>Status</b> — overall flyability verdict from this model (FLY / MAYBE / NO_FLY / RAIN)';
+    h+='</div></details>';
   }
 
   /* Hourly profile */
@@ -495,7 +531,7 @@ function renderCardBody(r){
     h+='<div class="table-wrap"><table class="htbl">';
     h+='<tr><th>Hour</th><th>Src</th><th>T</th><th>Dew</th><th>Base</th><th>Cloud</th><th>CL/CM/CH</th>';
     h+='<th>Prcp</th><th>W10</th><th>Gust</th><th>GF</th><th>W850</th><th>W700</th>';
-    h+='<th>RH850</th><th>RH700</th><th>Lapse</th><th>BL</th><th>CAPE</th><th>SW</th><th>W*</th></tr>';
+    h+='<th>RH850</th><th>RH700</th><th>Lapse</th><th>BL</th><th>CAPE</th><th>SW</th><th>Updr</th><th>W*</th></tr>';
     var tws=a.thermal_window_start,twe=a.thermal_window_end,twp=a.thermal_window_peak;
     var twsI=tws?parseInt(tws):99,tweI=twe?parseInt(twe):-1;
     hp.forEach(function(item){
@@ -527,10 +563,36 @@ function renderCardBody(r){
       h+='<td>'+fmtC(item.bl_height,'',0,'bl_height')+'</td>';
       h+='<td>'+fmtC(item.cape,'',0,'cape')+'</td>';
       h+='<td>'+fmtC(item.shortwave_radiation,'',0,'shortwave_radiation')+'</td>';
+      h+='<td>'+fmtC(item.updraft,'',2,'updraft')+'</td>';
       h+='<td>'+fmtC(item.wstar,'',2,'wstar')+'</td>';
       h+='</tr>';
     });
     h+='</table></div>';
+    /* Hourly profile legend */
+    h+='<details class="ref-details" style="margin-top:0.3rem"><summary class="ref-summary">';
+    h+='<span class="ref-title"><span>\u2139\ufe0f</span><span>Column legend</span></span>';
+    h+='<span class="ref-arrow"></span></summary>';
+    h+='<dl class="ens-legend">';
+    h+='<dt>T</dt><dd>Temperature 2m (\u00b0C)</dd>';
+    h+='<dt>Dew</dt><dd>Dewpoint 2m (\u00b0C) \u2014 lower = drier air, higher cloudbase</dd>';
+    h+='<dt>Base</dt><dd>Cloudbase MSL (m) estimated from T\u2212Td. <span style="color:var(--nogo)">&lt;1000 red</span>, <span style="color:var(--go)">&gt;3500 green</span></dd>';
+    h+='<dt>Cloud</dt><dd>Total cloud cover (%). <span style="color:var(--nogo)">&gt;80% red</span>, <span style="color:var(--go)">&lt;30% green</span></dd>';
+    h+='<dt>CL/CM/CH</dt><dd>Low/Mid/High cloud layers (%)</dd>';
+    h+='<dt>Prcp</dt><dd>Precipitation (mm/h). <span style="color:var(--nogo)">&gt;0.5 red</span></dd>';
+    h+='<dt>W10</dt><dd>Wind 10m (m/s). <span style="color:var(--nogo)">&gt;8 red</span>, <span style="color:var(--unlikely)">&gt;5 orange</span></dd>';
+    h+='<dt>Gust</dt><dd>Gusts 10m (m/s). <span style="color:var(--nogo)">&gt;10 red</span>, <span style="color:var(--unlikely)">&gt;7 orange</span></dd>';
+    h+='<dt>GF</dt><dd>Gust factor = gust \u2212 mean wind (m/s). <span style="color:var(--nogo)">&gt;7 red</span>, <span style="color:var(--unlikely)">&gt;4 orange</span></dd>';
+    h+='<dt>W850</dt><dd>Wind 850 hPa (~1500m) \u2014 gradient wind (m/s). <span style="color:var(--nogo)">&gt;5 red</span>, <span style="color:var(--unlikely)">&gt;3.5 orange</span></dd>';
+    h+='<dt>W700</dt><dd>Wind 700 hPa (~3000m) (m/s)</dd>';
+    h+='<dt>RH850/RH700</dt><dd>Relative humidity at pressure levels (%). Low = dry, good for thermals</dd>';
+    h+='<dt>Lapse</dt><dd>Temperature gradient 850\u2192700 hPa (\u00b0C/km). <span style="color:var(--go)">&gt;7 strong</span>, <span style="color:var(--unlikely)">&lt;5.5 weak</span>. Dry adiabatic \u2248 9.8</dd>';
+    h+='<dt>BL</dt><dd>Boundary layer height (m, GFS). <span style="color:var(--go)">&gt;1500 green</span>. Indicates mixing depth</dd>';
+    h+='<dt>CAPE</dt><dd>Convective Available Potential Energy (J/kg). 300\u20131500 good thermals, <span style="color:var(--nogo)">&gt;1500 storm risk</span></dd>';
+    h+='<dt>SW</dt><dd>Shortwave radiation (W/m\u00b2). <span style="color:var(--go)">&gt;600 strong solar input</span></dd>';
+    h+='<dt>Updr</dt><dd>ICON model updraft (m/s) \u2014 direct convective vertical velocity from ICON weather model. <span style="color:var(--go)">\u22651.5 strong</span>, \u22650.5 moderate. Only ICON models.</dd>';
+    h+='<dt>W*</dt><dd>Deardorff convective velocity (m/s) \u2014 estimated from BL height + solar radiation + temperature. <span style="color:var(--go)">\u22651.5 strong thermals</span>, \u22651.0 light thermals</dd>';
+    h+='<dt style="margin-top:0.3rem">Highlighted rows</dt><dd>Green background = thermal window (W*\u22651.5 + base\u22651000m + cloud&lt;60% + precip\u22640.5)</dd>';
+    h+='</dl></details>';
   }
 
   /* Per-model hourly tables (tabbed) */
@@ -556,11 +618,11 @@ function renderCardBody(r){
       h+='<div class="table-wrap"><table class="htbl">';
       h+='<tr><th>Hour</th><th>T</th><th>Base</th><th>Cloud</th>';
       h+='<th>Prcp</th><th>W10</th><th>Gust</th><th>W850</th>';
-      h+='<th>Lapse</th><th>BL</th><th>CAPE</th><th>SW</th><th>W*</th></tr>';
+      h+='<th>Lapse</th><th>BL</th><th>CAPE</th><th>SW</th><th>Updr</th><th>W*</th></tr>';
       mp.forEach(function(item){
         var hrI=parseInt(item.hour);
         var cls='';
-        if(item.wstar!=null&&item.wstar>=1.0)cls=' class="tw"';
+        if(item.wstar!=null&&item.wstar>=1.5)cls=' class="tw"';
         h+='<tr'+cls+'>';
         h+='<td><strong>'+item.hour+'</strong></td>';
         h+='<td>'+fmt(item.temp_2m,'',1)+'</td>';
@@ -574,6 +636,7 @@ function renderCardBody(r){
         h+='<td>'+fmtC(item.bl_height,'',0,'bl_height')+'</td>';
         h+='<td>'+fmtC(item.cape,'',0,'cape')+'</td>';
         h+='<td>'+fmtC(item.shortwave_radiation,'',0,'shortwave_radiation')+'</td>';
+        h+='<td>'+fmtC(item.updraft,'',2,'updraft')+'</td>';
         h+='<td>'+fmtC(item.wstar,'',2,'wstar')+'</td>';
         h+='</tr>';
       });
@@ -596,6 +659,17 @@ function renderCardBody(r){
       h+='<td class="n">'+fmt(s.max)+'</td><td>'+esc(s.trend||'\u2014')+'</td></tr>';
     });
     h+='</table></div>';
+    h+='<details class="ref-details"><summary class="ref-summary"><span class="ref-title">Legend</span><span class="ref-arrow">▸</span></summary>';
+    h+='<div class="ens-legend">';
+    h+='<b>Min / Mean / Max</b> — statistics computed over hours inside the thermal window<br>';
+    h+='<b>Trend</b> — ↑ rising, ↓ falling, → stable during the thermal window<br>';
+    h+='<b>cape</b> — Convective Available Potential Energy (J/kg)<br>';
+    h+='<b>cloudcover</b> — total cloud cover (%)<br>';
+    h+='<b>windspeed_10m</b> — wind at 10 m AGL (km/h)<br>';
+    h+='<b>windgusts_10m</b> — gust at 10 m AGL (km/h)<br>';
+    h+='<b>shortwave_radiation</b> — incoming solar radiation (W/m²)<br>';
+    h+='<b>precipitation</b> — hourly precipitation (mm)';
+    h+='</div></details>';
   }
 
   /* MOSMIX data */
@@ -671,6 +745,14 @@ function renderCardBody(r){
       }).join('');
       h+='</tr>';
       h+='</table></div>';
+      h+='<details class="ref-details"><summary class="ref-summary"><span class="ref-title">Legend</span><span class="ref-arrow">▸</span></summary>';
+      h+='<div class="ens-legend">';
+      h+='<b>PBL height</b> — Planetary Boundary Layer height (m MSL); top of convective mixing<br>';
+      h+='<b>Cloud low/mid/high %</b> — cloud fraction at low/mid/high levels<br>';
+      h+='<b>Rain mm</b> — hourly precipitation<br>';
+      h+='<b>Max thermal m/s</b> — peak thermal updraft velocity from MP hi-res model<br>';
+      h+='<b>Thermal top m</b> — altitude where thermals still exist (> 0.05 m/s)';
+      h+='</div></details>';
     }
   }
 

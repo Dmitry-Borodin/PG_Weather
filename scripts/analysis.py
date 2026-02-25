@@ -32,6 +32,7 @@ _LAYER_PRIORITY = [
 
 # GFS-only fields (always sourced from GFS regardless of priority)
 _GFS_ONLY_FIELDS = {"boundary_layer_height", "lifted_index", "convective_inhibition"}
+# updraft: ICON D2 only (2 km, ≤48ч) — EU/Global return null (v2.3)
 
 # Flag categories for scoring
 CRITICAL_TAGS = {"SUSTAINED_WIND_850", "GUSTS_HIGH", "PRECIP_13", "NO_FLYABLE_WINDOW"}
@@ -238,10 +239,11 @@ def build_hourly_profile(sources: dict, date: str, loc: dict) -> dict:
         rh700, s = _pick("relative_humidity_700hPa", hour); src_map["rh_700"] = s
         sw, s_sw = _pick("shortwave_radiation", hour);   src_map["shortwave_radiation"] = s_sw
         cape, s_cape = _pick("cape", hour);              src_map["cape"] = s_cape
+        updraft_v, s_upd = _pick("updraft", hour);       src_map["updraft"] = s_upd
 
         bl, s    = _pick_gfs("boundary_layer_height", hour); src_map["bl_height"] = s
         li, s    = _pick_gfs("lifted_index", hour);          src_map["lifted_index"] = s
-        cin, s   = _pick_gfs("convective_inhibition", hour); src_map["cin"] = s
+        cin, s_cin = _pick_gfs("convective_inhibition", hour); src_map["cin"] = s_cin
         if sw is None:
             sw2, s_sw2 = _pick_gfs("shortwave_radiation", hour)
             if sw2 is not None:
@@ -281,6 +283,7 @@ def build_hourly_profile(sources: dict, date: str, loc: dict) -> dict:
             "lapse_rate": lr,
             "bl_height": bl, "cape": cape, "cin": cin, "lifted_index": li,
             "shortwave_radiation": sw,
+            "updraft": round(updraft_v, 2) if updraft_v is not None else None,
             "wstar": ws,
             "_src": primary_src,
             "_src_overrides": src_detail if src_detail else None,
@@ -293,7 +296,7 @@ def build_hourly_profile(sources: dict, date: str, loc: dict) -> dict:
 
 
 def _detect_thermal_window(profile: list, loc: dict) -> dict:
-    """Detect thermal window: hours with W*≥1.0, low precip, base>1000m, cloud<60%."""
+    """Detect thermal window: hours with W*≥1.5, low precip, base>1000m, cloud<60%."""
     thermal_hours = []
     for p in profile:
         h = int(p["hour"].split(":")[0])
@@ -303,7 +306,7 @@ def _detect_thermal_window(profile: list, loc: dict) -> dict:
         prec = p.get("precipitation")
         base = p.get("cloudbase_msl")
         cloud = p.get("cloudcover")
-        if w is None or w < 1.0:
+        if w is None or w < 1.5:
             continue
         if prec is not None and prec > 0.5:
             continue
@@ -414,6 +417,7 @@ def build_per_model_profiles(sources: dict, date: str, loc: dict) -> dict:
             bl = _get_val(h, times, hour, "boundary_layer_height")
             li = _get_val(h, times, hour, "lifted_index")
             cin = _get_val(h, times, hour, "convective_inhibition")
+            updraft_v = _get_val(h, times, hour, "updraft")
 
             base_msl = estimate_cloudbase_msl(t2m, td, loc["elev"])
             lr = lapse_rate(t850, t700)
@@ -438,6 +442,7 @@ def build_per_model_profiles(sources: dict, date: str, loc: dict) -> dict:
                 "lapse_rate": lr,
                 "bl_height": bl, "cape": cape_v, "cin": cin, "lifted_index": li,
                 "shortwave_radiation": sw,
+                "updraft": round(updraft_v, 2) if updraft_v is not None else None,
                 "wstar": ws,
                 "_src": model_key,
             })

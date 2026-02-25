@@ -1,6 +1,6 @@
 # Источники данных для метео-триажа
 
-**Версия:** 4.0
+**Версия:** 4.1
 
 ---
 
@@ -117,7 +117,9 @@ GET /v1/forecast?models=ecmwf_ifs025
 Цепочка: icon_d2 → icon_eu → icon_global
 Endpoint: /v1/dwd-icon?models=<model>
 
-Тот же набор параметров что и ECMWF.
+Тот же набор параметров что и ECMWF + `updraft` (м/с).
+`updraft` — максимальная вертикальная скорость конвективного восходящего потока (от поверхности до 10 км).
+Фактически `updraft` возвращает данные только из ICON D2 (2 км, ≤48ч); EU/Global возвращают null.
 icon_d2 доступен только ≤48ч; для дальних дат → icon_eu или icon_global.
 ```
 
@@ -125,6 +127,8 @@ icon_d2 доступен только ≤48ч; для дальних дат → 
 
 Тот же набор + `boundary_layer_height, convective_inhibition, lifted_index, temperature_500hPa`.
 Endpoint `/v1/gfs`, `models=gfs_seamless`.
+
+Примечание: ECMWF и ICON принимают `convective_inhibition` как параметр, но возвращают null — фактически только GFS.
 
 ### 1.4 Ансамбли (ECMWF ENS + ICON-EU EPS)
 
@@ -150,7 +154,8 @@ GET https://ensemble-api.open-meteo.com/v1/ensemble
 | Облачность total/low/mid/high | cloudcover_* | ICON*, ECMWF*, GFS | Прогрев + инверсии |
 | BL height | boundary_layer_height | **GFS only** | Глубина перемешивания → W* |
 | CAPE | cape | ICON*, ECMWF*, GFS + ens | Конвективная энергия |
-| CIN | convective_inhibition | **GFS only** | Конвективное торможение |
+| Updraft | updraft | **ICON D2 only** (≤48ч) | Нативная конвективная скорость (м/с) |
+| CIN | convective_inhibition | **GFS only** | Конвективное торможение (фактически) |
 | LI | lifted_index | **GFS only** | Индекс нестабильности |
 | SW / direct radiation | shortwave_radiation, direct_radiation | ICON*, ECMWF*, GFS | Прогрев → W* |
 | Sunshine duration | sunshine_duration | ICON*, ECMWF*, GFS | Длительность солнца |
