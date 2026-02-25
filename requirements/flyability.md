@@ -1,6 +1,6 @@
 # Оценка лётности — как считаются очки и статусы
 
-**Версия:** 2.0
+**Версия:** 2.1
 
 ---
 
@@ -70,7 +70,8 @@ GFS-only поля: `boundary_layer_height`, `lifted_index`, `convective_inhibiti
 Из hourly profile (09:00+) выбираются часы, где **одновременно**:
 - W* ≥ 1.0 м/с
 - precipitation ≤ 0.5 мм
-- cloudbase_msl − peaks ≥ 800 м
+- cloudbase_msl ≥ 1000 м MSL
+- cloudcover < 60%
 
 Результат: `thermal_window` с полями:
 - `start` / `end` — первый и последний термический час

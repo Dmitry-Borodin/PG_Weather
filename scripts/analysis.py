@@ -293,8 +293,7 @@ def build_hourly_profile(sources: dict, date: str, loc: dict) -> dict:
 
 
 def _detect_thermal_window(profile: list, loc: dict) -> dict:
-    """Detect thermal window: hours with W*≥1.0, low precip, adequate base."""
-    peaks = loc["peaks"]
+    """Detect thermal window: hours with W*≥1.0, low precip, base>1000m, cloud<60%."""
     thermal_hours = []
     for p in profile:
         h = int(p["hour"].split(":")[0])
@@ -303,11 +302,14 @@ def _detect_thermal_window(profile: list, loc: dict) -> dict:
         w = p.get("wstar")
         prec = p.get("precipitation")
         base = p.get("cloudbase_msl")
+        cloud = p.get("cloudcover")
         if w is None or w < 1.0:
             continue
         if prec is not None and prec > 0.5:
             continue
-        if base is not None and (base - peaks) < 800:
+        if base is not None and base < 1000:
+            continue
+        if cloud is not None and cloud >= 60:
             continue
         thermal_hours.append(p)
 
@@ -801,7 +803,17 @@ def compute_status(flags, positives, agreement, ensemble_unc,
     if n_crit == 0 and n_qual == 0 and len(positives) == 0 and tw_hours == 0:
         status = "NO DATA"
 
-    return score, status
+    breakdown = {
+        "tw_hours": tw_hours,
+        "base_score": base_score,
+        "n_critical": n_crit,
+        "n_low_base": n_base,
+        "n_quality": n_qual,
+        "n_danger": n_dang,
+        "n_positive": len(positives),
+    }
+
+    return score, status, breakdown
 
 
 # ══════════════════════════════════════════════

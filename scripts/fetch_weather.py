@@ -274,7 +274,7 @@ def assess_location(loc_key: str, loc: dict, date: str, sources_list: list) -> d
                  and p["cloudbase_msl"] is not None]
     cb_min = min(bases_win) if bases_win else None
 
-    score, status = compute_status(
+    score, status, breakdown = compute_status(
         flags, positives, agreement, ensemble_unc,
         tw, cb_min, per_model_assessment)
 
@@ -389,6 +389,7 @@ def assess_location(loc_key: str, loc: dict, date: str, sources_list: list) -> d
         "flags": [{"tag": t, "msg": m} for t, m in flags],
         "positives": [{"tag": t, "msg": m} for t, m in positives],
         "score": score,
+        "score_breakdown": breakdown,
         "status": status,
 
         # Model agreement & uncertainty

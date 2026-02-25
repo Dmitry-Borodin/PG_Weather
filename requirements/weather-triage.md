@@ -1,6 +1,6 @@
 # Требования: Метео-триаж для XC closed routes
 
-**Версия:** 3.0
+**Версия:** 3.1
 
 ---
 
@@ -112,7 +112,7 @@ FAI-треугольник не обязателен. Open distance не инт�
 | CAPE тренд | late > early × 1.5 и late > 800 | head vs tail | CAPE_RISING |
 | LI @13:00 | < −4 | at_13_local | VERY_UNSTABLE |
 
-### Позитивные индикаторы (вес +2)
+### Позитивные индикаторы (вес +1, v2.0)
 
 | Параметр | Порог | Агрегация | Флаг |
 |----------|-------|-----------|------|
@@ -232,7 +232,7 @@ Combined profile по часам 08:00–18:00 из best available:
 → Для каждого часа и поля фиксируется `_src` (доминирующий источник) и `_src_overrides` (исключения).
 
 ### Этап 3 — Thermal Window Detection
-Часы, где одновременно: W* ≥ 1.0, precip ≤ 0.5, base > peaks + 800м.
+Часы, где одновременно: W* ≥ 1.0, precip ≤ 0.5, base ≥ 1000m MSL, cloud < 60%.
 → `thermal_window`: start, end, duration_h, peak_hour (макс lapse + cape).
 
 ### Этап 4 — Flyable Window (`compute_flyable_window`)
@@ -310,11 +310,11 @@ Spreads ECMWF ENS + ICON-EU EPS at_13_local.
 | LOW_BASE | LOW_BASE | −2 |
 | QUALITY | OVERCAST, STABLE, SHORT_WINDOW, GUST_FACTOR | −1 |
 | DANGER | HIGH_CAPE, VERY_UNSTABLE, CAPE_RISING | −1 |
-| POSITIVE | STRONG_LAPSE, GOOD_CAPE, DEEP_BL, HIGH_BASE, LONG_WINDOW, CLEAR_SKY, GOOD_WSTAR, STRONG_SUN | +2 |
+| POSITIVE | STRONG_LAPSE, GOOD_CAPE, DEEP_BL, HIGH_BASE, LONG_WINDOW, CLEAR_SKY, GOOD_WSTAR, STRONG_SUN | +1 |
 
 ### Формула
 ```
-score = −3 × n_critical − 2 × n_low_base − 1 × n_quality − 1 × n_danger + 2 × n_positive
+score = −3 × n_critical − 2 × n_low_base − 1 × n_quality − 1 × n_danger + 1 × n_positive
 ```
 
 ### Пороги статуса
