@@ -1,6 +1,6 @@
 # AGENTS — Операционные правила проекта
 
-**Версия:** 1.3
+**Версия:** 1.4
 
 ## Структура проекта
 
@@ -13,16 +13,30 @@ run.sh                             # Точка входа: Docker по умол
 requirements/
     weather-triage.md              # Требования к метео-триажу
     data-sources.md                # Источники данных + методы парсинга
+    priorities.md                  # Приоритеты скачивания и использования данных (v2.0)
+    flyability.md                  # Оценка лётности: очки, флаги, статусы (v2.0)
 prompts/
     weather-triage-prompt.md       # Промпт для LLM-ассистента
 scripts/
-    fetch_weather.py               # Сбор данных из открытых источников (v0.4)
+    fetch_weather.py               # Оркестратор: CLI, LOCATIONS, assess_location, main (v2.0)
+    fetchers.py                    # Сбор данных: fallback chains, API, ensemble, GeoSphere, MOSMIX
+    analysis.py                    # Анализ: scoring, flags, per-model, thermal window, MP-интеграция
+    report.py                      # Генерация отчётов: console, Markdown, HTML
     scraper.ts                     # Deno + Playwright: headless-скрапинг
-    viewer_template.html           # Шаблон HTML-вьюера отчётов
+    viewer_template.html           # Шаблон HTML-вьюера отчётов (v2.0)
 reports/                           # Автогенерируемые отчёты (gitignored)
 ```
 
+## Правила ассистента
 Вся логика и используемые данные должны быть явно отражены в веб-форме отчёта;
+
+В конце ответа ассистент добавляет git commit сообщение (без команды, только сообщение) с кратким описанием изменений в отчёте (например, "Added Lenggries, Forecast timezone aware 
+
+Можно читать с гита, но не коммитить. Коммиты делает пользователь вручную.
+
+Added new flying spot Lenggries
+Forecast time is now timezone dependent
+Adjusted (decreased) column widths for hourly forecast table in Location details").
 
 
 ## Версионирование

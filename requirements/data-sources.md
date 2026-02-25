@@ -1,34 +1,56 @@
 # Источники данных для метео-триажа
 
-**Версия:** 2.0
+**Версия:** 4.0
 
 ---
 
-## Модельный стек
+## Модельный стек (v2.0 — fallback chains)
 
-### Горизонт D-5…D-1 (среднесрок)
+В v2.0 детерминистические модели организованы в **семейства** (families) с fallback chains.
+Скрипт пробует модели в цепочке по порядку; как только получена — грубее не запрашиваются.
+
+### Детерминистические семейства
+
+| Семейство | Цепочка (fallback) | Эндпоинт | Роль |
+|-----------|-------------------|----------|------|
+| **ICON** | D2 2km → EU 7km → Global 13km | `/v1/dwd-icon?models=<model>` | Хай-рез для Альп; D2 только ≤48ч |
+| **ECMWF** | IFS 0.25° → IFS 0.4° | `/v1/forecast?models=<model>` | Опорная глобальная модель |
+| **GFS** | Seamless (одна модель) | `/v1/gfs?models=gfs_seamless` | Единственная с BL height, LI, CIN → нужна для W* |
+
+### Ансамблевые модели
 
 | Модель | Эндпоинт | Разрешение | Роль |
 |--------|----------|------------|------|
-| **ECMWF IFS HRES** | Open-Meteo `/v1/forecast?models=ecmwf_ifs025` | 0.25° | Опорный скелет: ветер, влажность, облачность, CAPE |
-| **ICON Seamless** | Open-Meteo `/v1/forecast?models=icon_seamless` | blend | Дополнение ECMWF; до 5 дней (вместо icon_d2) |
-| **GFS** | Open-Meteo `/v1/gfs?models=gfs_seamless` | 0.25° global | Единственная с BL height, LI, CIN |
-| **ECMWF ENS** | `ensemble-api…?models=ecmwf_ifs025` | 51 member | p10/p50/p90/spread |
-| **ICON-EU EPS** | `ensemble-api…?models=icon_eu` | 40 member | p10/p50/p90/spread |
+| **ECMWF ENS** | `ensemble-api.open-meteo.com/v1/ensemble?models=ecmwf_ifs025` | 51 member | p10/p50/p90/spread |
+| **ICON-EU EPS** | `ensemble-api.open-meteo.com/v1/ensemble?models=icon_eu` | 40 member | p10/p50/p90/spread |
 
-### Горизонт D-2…D-0 (ближний)
+### Региональные
 
 | Модель | Эндпоинт | Разрешение | Роль |
 |--------|----------|------------|------|
-| **ICON-D2** | Open-Meteo `/v1/dwd-icon?models=icon_d2` | 2 км | Локальный hi-res override (0–48ч) |
-| **GeoSphere AROME** | `dataset.api.hub.geosphere.at/…/nwp-v1-1h-2500m` | 2.5 км | Хай-рез, **полный ряд по окну** |
-| **DWD MOSMIX** | `opendata.dwd.de/…/MOSMIX_L_LATEST_*.kmz` | station | Точечный sanity-check, **локальное время** |
+| **GeoSphere AROME** | `dataset.api.hub.geosphere.at/v1/timeseries/forecast/nwp-v1-1h-2500m` | 2.5 км | Хай-рез для Австрии, полный ряд (UTC timestamps) |
+| **DWD MOSMIX** | `opendata.dwd.de/…/MOSMIX_L_LATEST_{station}.kmz` | station | Точечный sanity-check (только для локаций с `mosmix_id`) |
+
+### Headless-источники (только Docker)
+
+| Источник | Скрапер | Роль |
+|----------|---------|------|
+| **Meteo-Parapente** | `scraper.ts` → Playwright | Windgram / sounding (перехват XHR + DOM) |
+| **XContest** | `scraper.ts` → Playwright | Реальные полёты рядом с локацией |
+| **ALPTHERM** | `scraper.ts` → Playwright | Austro Control — обзорная карта термиков |
 
 ### Убрано
 
 | Источник | Причина |
 |----------|---------|
 | ~~BrightSky @13 forecast~~ | Дублировал MOSMIX без pressure-level / CAPE |
+
+### НЕ реализовано (упоминалось ранее)
+
+| Источник | Статус |
+|----------|--------|
+| ~~GeoSphere TAWES observations~~ | Нет в коде. Станции (11320, 11121, 11130, …) не используются |
+| ~~Автоматическое определение фёна~~ | Нет отдельной функции. Данные (RH700, wind700) доступны, логика не реализована |
 
 ---
 
@@ -44,17 +66,22 @@
   "param_name": {
     "min": 2.1, "mean": 4.3, "max": 7.8,
     "n": 10,
-    "head": [2.1, 3.0],    // первые 2 часа
-    "tail": [5.2, 4.8],    // последние 2 часа
-    "trend": "rising"       // rising/stable/falling
+    "head": [2.1, 3.0],
+    "tail": [5.2, 4.8],
+    "trend": "rising"
   }
 }
 ```
+Trend: `late = mean(tail)`, `early = mean(head)`.
+- rising: late > early × 1.3
+- falling: late < early × 0.7
+- stable: иначе
 
 ### Ансамбли
+Каждый параметр агрегируется поверх members: p10 (10-й перцентиль), p50 (медиана), p90 (90-й), spread (p90 − p10).
 ```json
 {
-  "param_p10": ..., "param_p50": ..., "param_p90": ..., "param_spread": ...
+  "param_p10": [...], "param_p50": [...], "param_p90": [...], "param_spread": [...]
 }
 ```
 
@@ -62,107 +89,162 @@
 
 ## 1. Open-Meteo — ОСНОВНОЙ ИСТОЧНИК
 
-### 1.1 ECMWF IFS HRES (deterministic, base model)
+Все вызовы: `timezone=Europe/Berlin`, `windspeed_unit=ms`, `start_date=DATE`, `end_date=DATE`.
 
-```bash
-curl -s "https://api.open-meteo.com/v1/forecast?latitude=47.68&longitude=11.57\
-  &hourly=temperature_2m,dewpoint_2m,relative_humidity_2m,\
-  windspeed_10m,windgusts_10m,winddirection_10m,\
-  cloudcover,cloudcover_low,cloudcover_mid,cloudcover_high,\
-  precipitation,cape,\
-  shortwave_radiation,direct_radiation,sunshine_duration,\
-  temperature_850hPa,temperature_700hPa,\
-  relative_humidity_850hPa,relative_humidity_700hPa,\
-  windspeed_850hPa,winddirection_850hPa,\
-  windspeed_700hPa,winddirection_700hPa\
-  &models=ecmwf_ifs025&timezone=Europe/Berlin&windspeed_unit=ms\
-  &start_date=DATE&end_date=DATE"
+### 1.1 ECMWF Family (fallback chain)
+
+```
+Цепочка: ecmwf_ifs025 → ecmwf_ifs04
+Endpoint: /v1/forecast?models=<model>
+
+GET /v1/forecast?models=ecmwf_ifs025
+  &hourly=temperature_2m,dewpoint_2m,relative_humidity_2m,
+    windspeed_10m,windgusts_10m,winddirection_10m,
+    cloudcover,cloudcover_low,cloudcover_mid,cloudcover_high,
+    precipitation,cape,
+    shortwave_radiation,direct_radiation,sunshine_duration,
+    temperature_850hPa,temperature_700hPa,
+    relative_humidity_850hPa,relative_humidity_700hPa,
+    windspeed_850hPa,winddirection_850hPa,
+    windspeed_700hPa,winddirection_700hPa
+
+Если ecmwf_ifs025 не дал данных → тот же запрос с models=ecmwf_ifs04
 ```
 
-### 1.2 ICON Seamless (расширен до 5 дней)
+### 1.2 ICON Family (fallback chain)
 
-Тот же набор параметров, `models=icon_seamless`. Заменяет icon_d2 для горизонта > 48ч.
+```
+Цепочка: icon_d2 → icon_eu → icon_global
+Endpoint: /v1/dwd-icon?models=<model>
 
-### 1.3 ICON-D2 (2 км, только 0–48ч)
+Тот же набор параметров что и ECMWF.
+icon_d2 доступен только ≤48ч; для дальних дат → icon_eu или icon_global.
+```
 
-`models=icon_d2` через `/v1/dwd-icon`. Локальный override на короткий горизонт.
+### 1.3 GFS (единственная с BL height, LI, CIN)
 
-### 1.4 GFS (единственная с BL height, LI, CIN)
+Тот же набор + `boundary_layer_height, convective_inhibition, lifted_index, temperature_500hPa`.
+Endpoint `/v1/gfs`, `models=gfs_seamless`.
 
-Дополнительно: `boundary_layer_height,convective_inhibition,lifted_index,temperature_500hPa`.
+### 1.4 Ансамбли (ECMWF ENS + ICON-EU EPS)
 
-### 1.5 Ансамбли (ECMWF ENS + ICON-EU EPS)
-
-```bash
-curl -s "https://ensemble-api.open-meteo.com/v1/ensemble?latitude=47.68&longitude=11.57\
-  &hourly=temperature_2m,windspeed_10m,windgusts_10m,cloudcover,precipitation,cape,windspeed_850hPa\
-  &models=ecmwf_ifs025&timezone=Europe/Berlin&windspeed_unit=ms\
-  &start_date=DATE&end_date=DATE"
+```
+GET https://ensemble-api.open-meteo.com/v1/ensemble
+  ?models=ecmwf_ifs025  (или icon_eu)
+  &hourly=temperature_2m,windspeed_10m,windgusts_10m,
+    cloudcover,precipitation,cape,windspeed_850hPa
 ```
 Ответ: `{param}_member00`, …, `{param}_member50`. Агрегация → p10/p50/p90/spread.
 
-### 1.6 Извлекаемые переменные
+### 1.5 Извлекаемые переменные
 
 | Параметр | Ключ | Модели | Назначение |
 |----------|------|--------|------------|
-| T 2m, Td 2m | temperature_2m, dewpoint_2m | Все | LCL / база |
-| RH 2m / 850 / 700 | relative_humidity_* | ECMWF, ICON, GFS | Влажность, фён |
-| Ветер 10m + порывы | windspeed_10m, windgusts_10m | Все | Приземный ветер |
-| Ветер 850/700 hPa | windspeed_850/700hPa | ECMWF, ICON, GFS | Фоновый ветер / фён |
-| Облачность low/mid/high | cloudcover_low/mid/high | Все | Прогрев + инверсии |
-| BL height | boundary_layer_height | **GFS only** | Глубина перемешивания |
-| CAPE / CIN / LI | cape, convective_inhibition, lifted_index | GFS (+CAPE все) | Нестабильность |
-| SW / direct radiation | shortwave_radiation, direct_radiation | ECMWF, ICON, GFS | Прогрев |
-| Осадки | precipitation | Все | Осадки |
+| T 2m, Td 2m | temperature_2m, dewpoint_2m | ICON*, ECMWF*, GFS | LCL / база облаков |
+| RH 2m / 850 / 700 | relative_humidity_* | ICON*, ECMWF*, GFS | Влажность |
+| Ветер 10m + порывы | windspeed_10m, windgusts_10m | ICON*, ECMWF*, GFS | Приземный ветер |
+| Направление 10m | winddirection_10m | ICON*, ECMWF*, GFS | Анализ ветра |
+| Ветер 850/700 hPa | windspeed_850/700hPa | ICON*, ECMWF*, GFS | Фоновый ветер |
+| Направление 850/700 | winddirection_850/700hPa | ICON*, ECMWF*, GFS | Анализ ветра |
+| T 850/700/500 hPa | temperature_*hPa | ICON*, ECMWF*, GFS (500 только GFS) | Lapse rate |
+| Облачность total/low/mid/high | cloudcover_* | ICON*, ECMWF*, GFS | Прогрев + инверсии |
+| BL height | boundary_layer_height | **GFS only** | Глубина перемешивания → W* |
+| CAPE | cape | ICON*, ECMWF*, GFS + ens | Конвективная энергия |
+| CIN | convective_inhibition | **GFS only** | Конвективное торможение |
+| LI | lifted_index | **GFS only** | Индекс нестабильности |
+| SW / direct radiation | shortwave_radiation, direct_radiation | ICON*, ECMWF*, GFS | Прогрев → W* |
+| Sunshine duration | sunshine_duration | ICON*, ECMWF*, GFS | Длительность солнца |
+| Осадки | precipitation | ICON*, ECMWF*, GFS + ens | Осадки |
 
-### 1.7 Расчёты
+\* ICON = icon_d2 / icon_eu / icon_global (одна из chain); ECMWF = ecmwf_ifs025 / ecmwf_ifs04 (одна из chain)
 
-LCL: `125 × (T_2m − Td_2m) + elevation`
-Lapse rate: `(T_850 − T_700) / 1.5 °C/km` (>7 сильная, >8 очень сильная)
-W*: Deardorff `(g/T_K × BL_h × 0.4·SWR / (ρ·cp))^(1/3)` (<0.5 слабо, 1.5+ хорошо, 2.5+ сильно)
+### 1.6 Расчёты
+
+**Cloud base MSL:** `125 × (T_2m − Td_2m) + elevation`
+**Lapse rate:** `(T_850 − T_700) / 1.5` °C/km (>7 сильная, >8 очень сильная)
+**W* (Deardorff):** `(g/T_K × BL_h × H_s / (ρ·cp))^(1/3)` где `H_s = 0.4 × SWR`, `ρ = 1.1`, `cp = 1005`
+  - < 0.5 слабо, 1.0–1.5 умеренно, 1.5–2.5 хорошо, 2.5+ сильно
+  - Требует GFS (BL height) — без GFS W* не считается
+**Gust factor:** `windgusts_10m − windspeed_10m` (>7 → турбулентность)
 
 ---
 
-## 2. GeoSphere AROME 2.5 km — полный ряд по окну
+## 2. GeoSphere AROME 2.5 km
 
-```bash
-curl -s "https://dataset.api.hub.geosphere.at/v1/timeseries/forecast/nwp-v1-1h-2500m\
-  ?parameters=t2m,cape,cin,tcc,lcc,mcc,hcc,u10m,v10m,ugust,vgust,snowlmt,rr,grad\
-  &lat_lon=47.26,11.39&output_format=geojson"
+```
+GET https://dataset.api.hub.geosphere.at/v1/timeseries/forecast/nwp-v1-1h-2500m
+  ?parameters=t2m,cape,cin,tcc,lcc,mcc,hcc,u10m,v10m,ugust,vgust,snowlmt,rr,grad
+  &lat_lon={lat},{lon}&output_format=geojson
 ```
 
-Маппинг: t2m→temperature_2m, tcc→cloudcover, lcc/mcc/hcc→low/mid/high, grad→shortwave_radiation, rr→precipitation.
 Timestamps в **UTC** → конвертируются в local через `zoneinfo`.
 
-### 2.1 Наблюдения TAWES
-
-Как прежде (станции 11320, 11121, 11130, 11204, 11279, 11144).
-
----
-
-## 3. DWD MOSMIX — sanity check, локальное время
-
-KMZ timestamps в UTC → скрипт конвертирует в **Europe/Berlin** с учётом DST.
-Параметры: TTT, Td, FF, FX1, DD, N/Neff/Nh/Nm/Nl, SunD1, Rad1h, RR1c.
-
----
-
-## 4. Фён
-
-Индикаторы: ветер 700 hPa > 10 м/с южный + RH700 < 30% + аномальный lapse rate.
-Станции: Innsbruck Airport (11121), snowlmt GeoSphere.
+**Маппинг имён → стандартные:**
+| GeoSphere | Стандартное | Примечание |
+|-----------|-------------|------------|
+| t2m | temperature_2m | |
+| cape | cape | |
+| cin | convective_inhibition | |
+| tcc | cloudcover | |
+| lcc / mcc / hcc | cloudcover_low / _mid / _high | |
+| grad | shortwave_radiation | |
+| rr | precipitation | |
+| snowlmt | snow_line | Уникальный параметр |
+| u10m, v10m | → windspeed_10m, winddirection_10m | Вычисляется из u/v |
+| ugust, vgust | → windgusts_10m | Вычисляется из u/v |
 
 ---
 
-## 5. Ключевые координаты
+## 3. DWD MOSMIX — sanity check
 
-| Район | Lat | Lon | Elev | Peaks | MOSMIX | GeoSphere |
-|-------|-----|-----|------|-------|--------|-----------|
-| Lenggries | 47.68 | 11.57 | 700 | 1800 | 10963 | — |
-| Wallberg | 47.64 | 11.79 | 1620 | 1722 | 10963 | — |
-| Kössen | 47.67 | 12.40 | 590 | 1900 | — | 11130 |
-| Innsbruck | 47.26 | 11.39 | 578 | 2600 | 11120 | 11121 |
-| Greifenburg | 46.75 | 13.18 | 600 | 2800 | — | 11204 |
-| Speikboden | 46.90 | 11.87 | 950 | 2500 | — | — |
-| Bassano | 45.78 | 11.73 | 130 | 1700 | — | — |
-| München | 48.14 | 11.58 | 520 | — | 10865 | — |
+KMZ с XML внутри. Timestamps в UTC → скрипт конвертирует в **Europe/Berlin** с учётом DST.
+
+**Извлекаемые параметры:**
+TTT (→ −273.15 °C), Td (→ −273.15 °C), FF, FX1, DD,
+N, Neff, Nh, Nm, Nl, PPPP (→ ÷100 hPa), SunD1, Rad1h, RR1c, wwP, R101.
+
+Данные хранятся как `hourly_local[param][hour_str]`. Извлекается `at_13_local`.
+Доступен только для локаций с `mosmix_id` (Lenggries/Wallberg → 10963, Innsbruck → 11120).
+
+---
+
+## 4. Headless-скрапинг (Deno + Playwright, только Docker)
+
+`scraper.ts` запускается как subprocess из `fetch_weather.py`. Timeout 180s.
+
+### 4.1 Meteo-Parapente
+Загружает `https://meteo-parapente.com/#/{lat},{lon},11`, кликает по карте, перехватывает JSON-ответы API и парсит DOM (windgram, sounding, панели прогноза).
+
+### 4.2 XContest
+Загружает поиск полётов рядом с точкой (`filter[point]`, `filter[radius]=50000m`). Извлекает таблицу: пилот, старт, дистанция, тип. Работает как sanity check — летали ли люди.
+
+### 4.3 ALPTHERM
+Загружает `https://flugwetter.austrocontrol.at/`. Если нет login wall — извлекает таблицы и ссылки на карты термиков. Не привязан к конкретной локации (австрийский обзор).
+
+---
+
+## 5. Фён — данные есть, логика не реализована
+
+Сырые данные для определения фёна доступны в hourly profile:
+- `windspeed_700hPa`, `winddirection_700hPa` → южный ветер > 10 м/с
+- `relative_humidity_700hPa` → < 30%
+- `lapse_rate` → аномально высокий
+- `snow_line` (GeoSphere) → аномальный рост
+
+**Автоматическая детекция фёна НЕ реализована** в текущем коде.
+
+---
+
+## 6. Ключевые координаты
+
+| Район | Lat | Lon | Elev | Peaks | MOSMIX | GeoSphere ID | Drive (h) |
+|-------|-----|-----|------|-------|--------|---------------|-----------|
+| Lenggries | 47.68 | 11.57 | 700 | 1800 | 10963 | — | 1.0 |
+| Wallberg | 47.64 | 11.79 | 1620 | 1722 | 10963 | — | 1.0 |
+| Kössen | 47.67 | 12.40 | 590 | 1900 | — | 11130 | 1.5 |
+| Innsbruck | 47.26 | 11.39 | 578 | 2600 | 11120 | 11121 | 2.0 |
+| Greifenburg | 46.75 | 13.18 | 600 | 2800 | — | 11204 | 4.0 |
+| Speikboden | 46.90 | 11.87 | 950 | 2500 | — | — | 3.5 |
+| Bassano | 45.78 | 11.73 | 130 | 1700 | — | — | 5.0 |
+
+München (48.14, 11.58, 520m, MOSMIX 10865) — использовался ранее, **в текущем LOCATIONS отсутствует**.

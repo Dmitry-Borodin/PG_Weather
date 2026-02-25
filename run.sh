@@ -1,8 +1,13 @@
 #!/usr/bin/env bash
-# Запуск метео-триажа для XC closed routes (v1.0).
+# Запуск метео-триажа для XC closed routes (v2.0).
 #
-# Модельный стек: ECMWF HRES + ICON Seamless + ICON-D2 + GFS
+# Модельный стек (fallback chains):
+#   ICON:  D2 2km → EU 7km → Global 13km
+#   ECMWF: IFS 0.25° → IFS 0.4°
+#   GFS:   Seamless (always, for BL/LI/CIN)
 #   + ECMWF ENS + ICON-EU EPS + GeoSphere AROME + MOSMIX
+#
+# Модули: fetch_weather.py → fetchers.py / analysis.py / report.py
 #
 # По умолчанию запускается через Docker (с headless Playwright).
 # Дата по умолчанию — ближайшая суббота (или сегодня, если суббота).

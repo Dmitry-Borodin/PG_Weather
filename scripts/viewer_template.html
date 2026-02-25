@@ -91,6 +91,20 @@ details>summary::-webkit-details-marker{display:none}
 .doubt-box ul{margin:0.2rem 0 0 1.2rem;font-size:0.85rem;color:#78350f}
 .no-doubt{background:#ecfdf5;border-color:#6ee7b7;color:#065f46}
 .no-doubt h3{color:#065f46}
+/* Narrow ensemble columns */
+.ens-tbl th.n,.ens-tbl td.n{padding:0.2rem 0.25rem;max-width:50px;font-size:0.72rem}
+.ens-tbl th{font-size:0.68rem;padding:0.25rem 0.3rem}
+.ens-tbl td:first-child{max-width:120px;overflow:hidden;text-overflow:ellipsis}
+/* Ensemble legend (collapsible) */
+.ens-legend{font-size:0.76rem;color:var(--muted);line-height:1.5;margin:0.3rem 0}
+.ens-legend dt{font-weight:600;color:var(--text)}
+.ens-legend dd{margin:0 0 0.25rem 1rem}
+/* Per-model tables */
+.model-tab-bar{display:flex;gap:0.3rem;margin:0.4rem 0;flex-wrap:wrap}
+.model-tab{padding:0.2rem 0.5rem;border:1px solid var(--border);border-radius:4px;
+  font-size:0.72rem;cursor:pointer;background:var(--card);color:var(--text)}
+.model-tab.active{background:#dbeafe;border-color:#3b82f6;font-weight:600}
+.model-panel{display:none}.model-panel.active{display:block}
 @media(max-width:768px){
   table{font-size:0.78rem}th,td{padding:0.3rem}
   .hdr h1{font-size:1.1rem}.hdr-inner{gap:0.5rem}
@@ -107,7 +121,7 @@ details>summary::-webkit-details-marker{display:none}
 </div>
 <div class="wrap">
   <div id="m"></div>
-  <div class="footer">PG Weather Triage v1.0</div>
+  <div class="footer">PG Weather Triage v2.0</div>
 </div>
 <script>
 const R = __REPORTS_DATA__;
@@ -123,9 +137,14 @@ function hasV(v){return v!==null&&v!==undefined}
 
 const MODEL_META={
   ecmwf_hres:{name:'ECMWF IFS HRES',step:'0.25°',short:'ECM',api:'ecmwf_ifs025'},
+  ecmwf_ifs025:{name:'ECMWF IFS',step:'0.25°',short:'EC25',api:'ecmwf_ifs025'},
+  ecmwf_ifs04:{name:'ECMWF IFS',step:'0.4°',short:'EC04',api:'ecmwf_ifs04'},
   icon_seamless:{name:'ICON Seamless',step:'blend',short:'ICN',api:'icon_seamless'},
   icon_d2:{name:'ICON-D2',step:'2 km',short:'I2',api:'icon_d2'},
+  icon_eu:{name:'ICON-EU',step:'7 km',short:'IEU',api:'icon_eu'},
+  icon_global:{name:'ICON Global',step:'13 km',short:'IG',api:'icon_global'},
   gfs:{name:'GFS',step:'~0.25°',short:'GFS',api:'gfs_seamless'},
+  gfs_seamless:{name:'GFS Seamless',step:'blend',short:'GFS',api:'gfs_seamless'},
   ecmwf_ens:{name:'ECMWF ENS',step:'51 mem',short:'E-ens',api:'ecmwf_ifs025'},
   icon_eu_eps:{name:'ICON-EU EPS',step:'40 mem',short:'I-eps',api:'icon_eu'},
   geosphere_arome:{name:'GeoSphere AROME',step:'2.5 km',short:'GEO',api:'arpege_seamless_2.5km'},
@@ -141,7 +160,7 @@ const MOSMIX_PARAM_HELP={
 };
 
 /* Source priority for best value */
-const SRC_PRIORITY=['icon_d2','ecmwf_hres','icon_seamless','gfs'];
+const SRC_PRIORITY=['icon_d2','icon_eu','icon_global','ecmwf_ifs025','ecmwf_ifs04','ecmwf_hres','gfs_seamless','gfs','icon_seamless'];
 function bestAt13(r,key){
   var s=r.sources||{};
   for(var i=0;i<SRC_PRIORITY.length;i++){
@@ -360,7 +379,7 @@ function renderCardBody(r){
     euKeys.forEach(function(ens){
       var ed=eu[ens];
       h+='<div style="margin-bottom:0.5rem"><span class="model-pill">'+esc(modelShort(ens)+': '+modelName(ens))+'</span></div>';
-      h+='<div class="table-wrap"><table style="font-size:0.8rem">';
+      h+='<div class="table-wrap"><table class="ens-tbl" style="font-size:0.72rem">';
       h+='<tr><th>Param</th><th class="n">p10</th><th class="n">p50</th><th class="n">p90</th><th class="n">Spread</th></tr>';
       Object.keys(ed).forEach(function(p){
         var pd=ed[p];
@@ -369,6 +388,40 @@ function renderCardBody(r){
       });
       h+='</table></div>';
     });
+    /* Collapsible ensemble legend */
+    h+='<details class="ref-details" style="margin-top:0.3rem"><summary class="ref-summary">';
+    h+='<span class="ref-title"><span>\u2139\ufe0f</span><span>Ensemble parameters legend</span></span>';
+    h+='<span class="ref-arrow"></span></summary>';
+    h+='<dl class="ens-legend">';
+    h+='<dt>p10</dt><dd>10th percentile \u2014 optimistic bound (90% of members predict worse)</dd>';
+    h+='<dt>p50</dt><dd>50th percentile (median) \u2014 central estimate</dd>';
+    h+='<dt>p90</dt><dd>90th percentile \u2014 pessimistic bound (only 10% of members predict worse)</dd>';
+    h+='<dt>Spread</dt><dd>p90 \u2212 p10 \u2014 ensemble uncertainty. High spread = low confidence.</dd>';
+    h+='<dt>temperature_2m</dt><dd>2m temperature (\u00b0C)</dd>';
+    h+='<dt>windspeed_10m</dt><dd>10m wind speed (m/s). Spread >4 = significant uncertainty.</dd>';
+    h+='<dt>windgusts_10m</dt><dd>Wind gusts at 10m (m/s)</dd>';
+    h+='<dt>cloudcover</dt><dd>Total cloud cover (%). Spread >40 = uncertain sky.</dd>';
+    h+='<dt>precipitation</dt><dd>Precipitation (mm/h)</dd>';
+    h+='<dt>cape</dt><dd>CAPE (J/kg). Spread >600 = convective uncertainty.</dd>';
+    h+='<dt>windspeed_850hPa</dt><dd>Wind at 850 hPa (~1500m, gradient wind)</dd>';
+    h+='</dl></details>';
+  }
+
+  /* Per-model assessment summary */
+  var pma=a.per_model_assessment||{};
+  var pmaKeys=Object.keys(pma);
+  if(pmaKeys.length>1){
+    h+='<h3>Per-Model Assessment</h3>';
+    h+='<div class="table-wrap"><table style="font-size:0.8rem">';
+    h+='<tr><th>Model</th><th class="n">Thermal h</th><th class="n">Flyable h</th><th>Status</th></tr>';
+    pmaKeys.forEach(function(mk){
+      var md=pma[mk];
+      h+='<tr><td><span class="model-pill">'+esc(modelShort(mk)+': '+(md.model_label||mk))+'</span></td>';
+      h+='<td class="n">'+fmt(md.thermal_hours)+'</td>';
+      h+='<td class="n">'+fmt(md.flyable_hours)+'</td>';
+      h+='<td>'+badge(md.status)+'</td></tr>';
+    });
+    h+='</table></div>';
   }
 
   /* Hourly profile */
@@ -415,6 +468,55 @@ function renderCardBody(r){
       h+='</tr>';
     });
     h+='</table></div>';
+  }
+
+  /* Per-model hourly tables (tabbed) */
+  var mps=(r.hourly_analysis||{}).model_profiles||{};
+  var mpKeys=Object.keys(mps);
+  if(mpKeys.length>1){
+    var mpId='mp_'+Math.random().toString(36).substr(2,6);
+    h+='<h3>Per-Model Hourly (08:00\u201318:00)</h3>';
+    h+='<div class="model-tab-bar">';
+    mpKeys.forEach(function(mk,idx){
+      h+='<div class="model-tab'+(idx===0?' active':'')+'" onclick="(function(el){';
+      h+='var p=el.parentNode.parentNode;';
+      h+='p.querySelectorAll(\'.model-tab\').forEach(function(t){t.classList.remove(\'active\')});';
+      h+='el.classList.add(\'active\');';
+      h+='p.querySelectorAll(\'.model-panel\').forEach(function(t){t.classList.remove(\'active\')});';
+      h+='p.querySelector(\'[data-model=\\\'\'+el.dataset.model+\'\\\']\').classList.add(\'active\');';
+      h+='})(this)" data-model="'+esc(mk)+'">'+esc(modelShort(mk)+': '+(MODEL_META[mk]?MODEL_META[mk].name:mk))+'</div>';
+    });
+    h+='</div>';
+    mpKeys.forEach(function(mk,idx){
+      var mp=mps[mk];
+      h+='<div class="model-panel'+(idx===0?' active':'')+'" data-model="'+esc(mk)+'">';
+      h+='<div class="table-wrap"><table class="htbl">';
+      h+='<tr><th>Hour</th><th>T</th><th>Base</th><th>Cloud</th>';
+      h+='<th>Prcp</th><th>W10</th><th>Gust</th><th>W850</th>';
+      h+='<th>Lapse</th><th>BL</th><th>CAPE</th><th>SW</th><th>W*</th></tr>';
+      mp.forEach(function(item){
+        var hrI=parseInt(item.hour);
+        var cls='';
+        if(item.wstar!=null&&item.wstar>=1.0)cls=' class="tw"';
+        h+='<tr'+cls+'>';
+        h+='<td><strong>'+item.hour+'</strong></td>';
+        h+='<td>'+fmt(item.temp_2m,'',1)+'</td>';
+        h+='<td>'+fmt(item.cloudbase_msl,'',0)+'</td>';
+        h+='<td>'+fmt(item.cloudcover,'',0)+'</td>';
+        h+='<td>'+fmt(item.precipitation,'',1)+'</td>';
+        h+='<td>'+fmt(item.wind_10m,'',1)+'</td>';
+        h+='<td>'+fmt(item.gusts,'',1)+'</td>';
+        h+='<td>'+fmt(item.wind_850,'',1)+'</td>';
+        h+='<td>'+fmt(item.lapse_rate,'',1)+'</td>';
+        h+='<td>'+fmt(item.bl_height,'',0)+'</td>';
+        h+='<td>'+fmt(item.cape,'',0)+'</td>';
+        h+='<td>'+fmt(item.shortwave_radiation,'',0)+'</td>';
+        var ws=item.wstar;
+        h+='<td'+(ws!=null&&ws>=1.0?' style="color:var(--go);font-weight:600"':'')+'>'+fmt(ws,'',2)+'</td>';
+        h+='</tr>';
+      });
+      h+='</table></div></div>';
+    });
   }
 
   /* GeoSphere thermal_window_stats */
