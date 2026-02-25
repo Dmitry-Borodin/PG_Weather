@@ -383,7 +383,7 @@ def assess_location(loc_key: str, loc: dict, date: str, sources_list: list) -> d
 
         # Window-based metrics
         "sustained_wind_850_mean": round(statistics.mean(winds_850_win), 1) if winds_850_win else None,
-        "max_gust_window": round(max(gusts_win), 1) if gusts_win else None,
+        "mean_gust_window": round(statistics.mean(gusts_win), 1) if gusts_win else None,
         "max_gust_factor_window": round(max(gf_win), 1) if gf_win else None,
         "continuous_flyable_hours": flyable["continuous_flyable_hours"],
         "flyable_start": flyable.get("flyable_start"),

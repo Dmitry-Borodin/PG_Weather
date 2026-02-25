@@ -69,7 +69,7 @@ def print_triage(results, forecast_date):
         print(f"     Wind @850: {_fv(a.get('wind_850hPa_ms'),' m/s',1)} "
               f"(mean window: {_fv(a.get('sustained_wind_850_mean'),' m/s',1)})  |  "
               f"Gusts: {_fv(a.get('gusts_10m_ms'),' m/s',1)} "
-              f"(max window: {_fv(a.get('max_gust_window'),' m/s',1)})  |  "
+              f"(mean window: {_fv(a.get('mean_gust_window'),' m/s',1)})  |  "
               f"GF max: {_fv(a.get('max_gust_factor_window'),' m/s',1)}")
         print(f"     CAPE: {_fv(a.get('cape_J_per_kg'),'',0)}  |  "
               f"LI: {_fv(a.get('lifted_index'))}  |  "
@@ -177,7 +177,7 @@ def generate_markdown_report(results, date, gen_time, locations_dict):
             f"| {_v(a.get('cloudbase_msl'),'m')} "
             f"| {_v(a.get('base_margin_over_peaks'),'m')} "
             f"| {_v(a.get('sustained_wind_850_mean'),'m/s')} "
-            f"| {_v(a.get('max_gust_window'),'m/s')} "
+            f"| {_v(a.get('mean_gust_window'),'m/s')} "
             f"| {_v(a.get('cape_J_per_kg'),'',0)} "
             f"| {_v(a.get('lapse_rate_C_per_km'),'°C/km')} "
             f"| {_v(a.get('boundary_layer_height_m'),'m',0)} "
@@ -206,7 +206,7 @@ def generate_markdown_report(results, date, gen_time, locations_dict):
                  f"(window mean: {_v(a.get('sustained_wind_850_mean'),'m/s')})  |  "
                  f"**@700hPa**: {_v(a.get('wind_700hPa_ms'),'m/s')}")
         L.append(f"- **Gusts**: {_v(a.get('gusts_10m_ms'),'m/s')} "
-                 f"(window max: {_v(a.get('max_gust_window'),'m/s')})  |  "
+                 f"(window mean: {_v(a.get('mean_gust_window'),'m/s')})  |  "
                  f"**Gust factor max**: {_v(a.get('max_gust_factor_window'),'m/s')}")
         L.append(f"- **CAPE**: {_v(a.get('cape_J_per_kg'),'J/kg',0)}  |  "
                  f"**LI**: {_v(a.get('lifted_index'))}  |  "

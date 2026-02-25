@@ -144,7 +144,7 @@ def estimate_wstar(bl_h, sw_rad, temp_c):
         return None
     H_s = 0.4 * sw_rad
     arg = (9.81 / T_K) * bl_h * H_s / (1.1 * 1005.0)
-    return round(arg ** (1 / 3), 2) if arg > 0 else 0.0
+    return round(arg ** (1 / 3), 2) if arg > 0 else None
 
 
 # ══════════════════════════════════════════════
@@ -296,7 +296,7 @@ def build_hourly_profile(sources: dict, date: str, loc: dict) -> dict:
 
 
 def _detect_thermal_window(profile: list, loc: dict) -> dict:
-    """Detect thermal window: hours with W*≥1.5, low precip, base>1000m, cloud<60%."""
+    """Detect thermal window: hours with W*≥1.5, low precip, base>1000m MSL, cloud<70%."""
     thermal_hours = []
     for p in profile:
         h = int(p["hour"].split(":")[0])
@@ -305,14 +305,14 @@ def _detect_thermal_window(profile: list, loc: dict) -> dict:
         w = p.get("wstar")
         prec = p.get("precipitation")
         base = p.get("cloudbase_msl")
-        cloud = p.get("cloudcover")
+        cc = p.get("cloudcover")
         if w is None or w < 1.5:
             continue
         if prec is not None and prec > 0.5:
             continue
         if base is not None and base < 1000:
             continue
-        if cloud is not None and cloud >= 60:
+        if cc is not None and cc >= 70:
             continue
         thermal_hours.append(p)
 
@@ -322,15 +322,15 @@ def _detect_thermal_window(profile: list, loc: dict) -> dict:
         window["start"] = thermal_hours[0]["hour"]
         window["end"] = thermal_hours[-1]["hour"]
         window["duration_h"] = len(thermal_hours)
-        best_lr, best_cape, peak_h = 0, 0, thermal_hours[0]["hour"]
+        best_lr, best_cape, peak_h = -999, -999, thermal_hours[0]["hour"]
         for th in thermal_hours:
-            lr_v = th.get("lapse_rate") or 0
-            ca_v = th.get("cape") or 0
+            lr_v = th.get("lapse_rate") if th.get("lapse_rate") is not None else -999
+            ca_v = th.get("cape") if th.get("cape") is not None else -999
             if lr_v > best_lr or (lr_v == best_lr and ca_v > best_cape):
                 best_lr, best_cape, peak_h = lr_v, ca_v, th["hour"]
         window["peak_hour"] = peak_h
-        window["peak_lapse"] = best_lr if best_lr > 0 else None
-        window["peak_cape"] = best_cape if best_cape > 0 else None
+        window["peak_lapse"] = best_lr if best_lr > -999 else None
+        window["peak_cape"] = best_cape if best_cape > -999 else None
 
     return window
 
@@ -541,8 +541,8 @@ def compute_flags(profile: list, loc: dict, flyable: dict,
         flags.append(("SUSTAINED_WIND_850",
                       f"mean {mean_w:.1f} m/s over window > 5.0 (closed route threshold)"))
 
-    if gusts_all and max(gusts_all) > 10.0:
-        flags.append(("GUSTS_HIGH", f"max {max(gusts_all):.1f} m/s > 10.0 in window"))
+    if gusts_all and statistics.mean(gusts_all) > 10.0:
+        flags.append(("GUSTS_HIGH", f"mean {statistics.mean(gusts_all):.1f} m/s > 10.0 in window"))
 
     if gust_factors and max(gust_factors) > 7.0:
         flags.append(("GUST_FACTOR",

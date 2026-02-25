@@ -101,7 +101,7 @@
 Все ключевые оценки делай **с привязкой к 13:00 местного времени (Europe/Berlin)**:
 - **База облаков @13:00 local** (MSL, margin over peaks)
 - **Ветер на рабочих высотах @13:00 local** + mean по окну (sustained_wind_850_mean)
-- **Порывы**: max по окну (max_gust_window) + gust factor (max_gust_factor_window)
+- **Порывы**: mean по окну (mean_gust_window) + gust factor (max_gust_factor_window)
 - **Термическая сила**: mean/peak/head/tail из thermal_window_stats для W*, BL, lapse rate, CAPE
 
 Профиль по дню из hourly_profile (11 точек 08:00–18:00):
@@ -209,7 +209,7 @@ FAI не обязателен.
 
 ### 2) Ветер и турбулентность
 - sustained_wind_850_mean по окну
-- max_gust_window, max_gust_factor_window
+- mean_gust_window, max_gust_factor_window
 - ветер @700 hPa (shear indicator)
 - направление + влияние на закрываемость closed route
 - RH на 850/700 — индикатор влажности на рабочих высотах

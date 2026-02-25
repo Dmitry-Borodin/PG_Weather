@@ -1,6 +1,6 @@
 # Оценка лётности — как считаются очки и статусы
 
-**Версия:** 2.3
+**Версия:** 2.4
 
 ---
 
@@ -55,7 +55,7 @@ GFS-only поля: `boundary_layer_height`, `lifted_index`, `convective_inhibiti
 |------|---------|-------------|
 | `cloudbase_msl` | `125 × (T_2m − Td_2m) + elev` | temperature_2m, dewpoint_2m, location.elev |
 | `lapse_rate` | `(T_850 − T_700) / 1.5` °C/km | temperature_850hPa, temperature_700hPa |
-| `wstar` | Deardorff: `(g/T_K × BL_h × 0.4·SWR / (1.1·1005))^(1/3)` | boundary_layer_height (GFS), shortwave_radiation, temperature_2m |
+| `wstar` | Deardorff: `(g/T_K × BL_h × 0.4·SWR / (1.1·1005))^(1/3)`, возвращает **None** если аргумент ≤ 0 | boundary_layer_height (GFS), shortwave_radiation, temperature_2m |
 | `updraft` | ICON native: максимальная вертикальная скорость конвективного восходящего потока (м/с) от поверхности до 10 км | ICON D2 only (2 км, ≤48ч); EU/Global возвращают null |
 | `gust_factor` | `windgusts_10m − windspeed_10m` м/с | windgusts_10m, windspeed_10m |
 
@@ -74,7 +74,7 @@ GFS-only поля: `boundary_layer_height`, `lifted_index`, `convective_inhibiti
 - W* ≥ 1.5 м/с
 - precipitation ≤ 0.5 мм
 - cloudbase_msl ≥ 1000 м MSL
-- cloudcover < 60%
+- cloudcover < 70%
 
 Результат: `thermal_window` с полями:
 - `start` / `end` — первый и последний термический час
@@ -110,7 +110,7 @@ Flyable = можно лететь (не сдует, не зальёт). Thermal 
 | Флаг | Условие | Агрегация |
 |------|---------|-----------|
 | `SUSTAINED_WIND_850` | mean(windspeed_850hPa) > 5.0 м/с | среднее по окну 09–18 |
-| `GUSTS_HIGH` | max(windgusts_10m) > 10.0 м/с | максимум по окну 09–18 |
+| `GUSTS_HIGH` | mean(windgusts_10m) > 10.0 м/с | среднее по окну 09–18 |
 | `PRECIP_13` | precipitation @13:00 > 0.5 мм | точка 13:00 |
 | `NO_FLYABLE_WINDOW` | continuous_flyable_hours = 0 | compute_flyable_window |
 
@@ -458,11 +458,12 @@ Hard Rule 3 (v2.0): `cloudbase_min < 2000m` → max MAYBE — это **абсо�
 
 | Ограничение | Влияние |
 |-------------|---------|
-| W* зависит от GFS | Без GFS — нет W*, thermal window = 0 → base score = −6 |
+| W* зависит от GFS | Без GFS — нет W* (returns None), thermal window = 0 → base score = −6 |
 | ICON updraft — только ICON D2 ≤48ч | Для D+3 и далее updraft недоступен (EU/Global возвращают null) |
 | LI только GFS | Без GFS — нет VERY_UNSTABLE |
 | Нет детекции фёна | Южный поток + сухой воздух на 700hPa не определяется |
 | Scoring не учитывает тип XC | Одна шкала для всех дистанций |
 | Per-model assessment упрощён | 4 уровня вместо 6, нет полного flag analysis |
 | MP integration зависит от scraper | Без Docker / --no-scraper — нет MP данных |
+| Null vs 0 | Отсутствующие данные = None/null/dash, **никогда 0**. Параметры без данных не учитываются в scoring |
 | Thermal window gaps | Непрерывность не проверяется — считаются все подходящие часы |
