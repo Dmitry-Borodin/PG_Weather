@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
-# Запуск метео-триажа для XC closed routes.
+# Запуск метео-триажа для XC closed routes (v1.0).
+#
+# Модельный стек: ECMWF HRES + ICON Seamless + ICON-D2 + GFS
+#   + ECMWF ENS + ICON-EU EPS + GeoSphere AROME + MOSMIX
 #
 # По умолчанию запускается через Docker (с headless Playwright).
 # Дата по умолчанию — ближайшая суббота (или сегодня, если суббота).
@@ -8,7 +11,7 @@
 #   ./run.sh                                   # Docker, след. суббота, все локации
 #   ./run.sh 2025-07-15                        # Docker, конкретная дата
 #   ./run.sh 2025-07-15 lenggries,koessen      # Docker, конкретные локации
-#   ./run.sh 2025-07-15 all icon_d2,gfs meteo_parapente  # Docker, конкретные источники
+#   ./run.sh 2025-07-15 all ecmwf_hres,icon_d2 meteo_parapente  # Docker, конкретные источники
 #
 # Локальный режим (без Docker, без headless):
 #   ./run.sh --local                           # след. суббота, без Docker
