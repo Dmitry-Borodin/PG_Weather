@@ -1,6 +1,6 @@
 # Требования: Метео-триаж для XC closed routes
 
-**Версия:** 3.4
+**Версия:** 3.6
 
 ---
 
@@ -52,8 +52,8 @@ FAI-треугольник не обязателен. Open distance не инт�
 ### D-5…D-1 (среднесрок)
 | Модель | Разрешение | Поставщик | Роль |
 |--------|------------|-----------|------|
-| ECMWF IFS HRES | 0.25° | Open-Meteo `/v1/forecast` | Опорная / скелет |
-| ICON Seamless | blend | Open-Meteo `/v1/forecast` | Второй детерминист |
+| ECMWF family (IFS 0.25° → 0.4°) | 0.25° / 0.4° | Open-Meteo `/v1/forecast` | Опорная глобальная модель (fallback chain) |
+| ICON family (D2 → EU → Global) | 2 km / 7 km / 13 km | Open-Meteo `/v1/dwd-icon` | Детализация по Альпам (fallback chain) |
 | GFS | ~0.25° | Open-Meteo `/v1/gfs` | BL height, LI, CIN (эксклюзивно) |
 | ECMWF ENS (51 чл.) | 0.25° | `ensemble-api.open-meteo.com` | Ансамблевый разброс |
 | ICON-EU EPS (40 чл.) | ~7 km | `ensemble-api.open-meteo.com` | Ансамблевый разброс |
@@ -218,7 +218,7 @@ FAI-треугольник не обязателен. Open distance не инт�
 
 ### Этап 1 — Сбор данных (`assess_location`)
 Для каждой локации последовательно (каждый источник независим от остальных):
-1. Deterministic: ECMWF HRES → ICON Seamless → ICON-D2 → GFS
+1. Deterministic families: ICON chain (D2→EU→Global) → ECMWF chain (0.25°→0.4°) → GFS
 2. Ensemble: ECMWF ENS → ICON-EU EPS
 3. GeoSphere AROME (если координаты в зоне покрытия)
 4. DWD MOSMIX (если есть `mosmix_id`)
@@ -228,9 +228,9 @@ FAI-треугольник не обязателен. Open distance не инт�
 
 ### Этап 2 — Hourly Profile (`build_hourly_profile`)
 Combined profile по часам 08:00–18:00 из best available:
-- **Приоритет surface/pressure:** ICON-D2 > ECMWF HRES > ICON Seamless > GFS
+- **Общие параметры:** усреднение best ICON + best ECMWF (с fallback на одно значение, если второе отсутствует)
 - **GFS-only параметры:** boundary_layer_height, lifted_index, convective_inhibition
-- **Updraft (м/с):** нативный параметр ICON D2 (2 км, ≤48ч) — макс. вертикальная скорость конвективного восходящего потока. EU/Global возвращают null
+- **Updraft (м/с):** нативный параметр ICON (фактически ICON D2; EU/Global обычно null)
 - **Fallback SW/CAPE:** сначала приоритетная цепочка, затем GFS
 
 → Для каждого часа и поля фиксируется `_src` (доминирующий источник) и `_src_overrides` (исключения).
@@ -251,7 +251,7 @@ Combined profile по часам 08:00–18:00 из best available:
 Анализ hourly profile по пороговым значениям → списки flags и positives.
 
 ### Этап 6 — Model Agreement (`compute_model_agreement`)
-Автоматическое сравнение ECMWF HRES vs ICON Seamless at_13_local.
+Автоматическое сравнение best available ECMWF vs best available ICON at_13_local.
 - Параметры: temperature_2m, windspeed_10m, windgusts_10m, cloudcover, precipitation, cape, windspeed_850hPa
 - Допуски: T ±2°C, wind ±2 m/s, gusts ±3 m/s, cloud ±20%, precip ±0.5 mm, CAPE ±200 J/kg
 - Score → confidence: HIGH (≥80%) / MEDIUM (≥50%) / LOW (<50%)
@@ -261,9 +261,11 @@ Spreads ECMWF ENS + ICON-EU EPS at_13_local.
 Большой spread → понижение статуса.
 
 ### Этап 8 — Scoring & Status (`compute_status`)
-Формула: score = −3×critical − 2×low_base − 1×quality − 1×danger + Σ(positive weights).
-Веса позитивных: VERY_HIGH_BASE = +2, остальные = +1.
-Жёсткие правила: критические флаги и модельная неуверенность могут понизить статус.
+Thermal-window-centric scoring:
+- `base_score` по `tw_hours`: 0→−6, 1–2→−2, 3–4→+1, 5–6→+4, 7+→+6
+- затем deductions: `−3×critical −2×LOW_BASE −1×quality −1×danger`
+- затем bonuses: `+1×positive`, `VERY_HIGH_BASE` = +2
+- hard rules: критические комбинации, LOW_BASE_HARD (<2000 MSL), MODEL_DISAGREE, LOW_CONFIDENCE, ENS_*_SPREAD, NO DATA
 
 ### Этап 9 — Финальный ранжир
 Все локации сортируются по STATUS_ORDER: STRONG > GO > MAYBE > UNLIKELY > NO-GO > NO DATA.
@@ -307,21 +309,27 @@ Spreads ECMWF ENS + ICON-EU EPS at_13_local.
 
 ## 13. Scoring (реализованный алгоритм)
 
-### Веса флагов
+### Base score от термического окна (`tw_hours`)
 
-| Категория | Флаги | Вес |
-|-----------|-------|-----|
-| CRITICAL | SUSTAINED_WIND_850, GUSTS_HIGH, PRECIP_13, NO_FLYABLE_WINDOW | −3 |
-| LOW_BASE | LOW_BASE | −2 |
-| QUALITY | OVERCAST, STABLE, SHORT_WINDOW, GUST_FACTOR | −1 |
-| DANGER | HIGH_CAPE, VERY_UNSTABLE, CAPE_RISING | −1 |
-| POSITIVE | STRONG_LAPSE, GOOD_CAPE, DEEP_BL, HIGH_BASE, LONG_WINDOW, CLEAR_SKY, GOOD_WSTAR, STRONG_SUN | +1 |
-| VERY_HIGH_BASE | VERY_HIGH_BASE (взамен HIGH_BASE, если база > 3500 м MSL) | +2 |
+| tw_hours | base_score |
+|----------|------------|
+| 0 | -6 |
+| 1–2 | -2 |
+| 3–4 | +1 |
+| 5–6 | +4 |
+| 7+ | +6 |
 
-### Формула
+### Итоговая формула
 ```
-score = −3 × n_critical − 2 × n_low_base − 1 × n_quality − 1 × n_danger + 1 × n_positive + 2 × n_very_high_base
+score = base_score
+      − 3 × n_critical
+      − 2 × n_low_base
+      − 1 × n_quality
+      − 1 × n_danger
+      + 1 × n_positive
+      + 2 × n_very_high_base
 ```
+`n_positive` здесь не включает `VERY_HIGH_BASE` (он учитывается отдельно как +2).
 
 ### Пороги статуса
 
@@ -337,7 +345,9 @@ score = −3 × n_critical − 2 × n_low_base − 1 × n_quality − 1 × n_dan
 
 1. ≥ 2 критических **ИЛИ** (≥ 1 критический + LOW_BASE) → **NO-GO** (безусловно)
 2. ≥ 1 критический + статус GO/STRONG → **MAYBE**
-3. Model agreement confidence = LOW + статус GO/STRONG → **MAYBE** + `LOW_CONFIDENCE`
-4. Ensemble wind spread > 5 м/с + GO/STRONG → **MAYBE** + `ENS_WIND_SPREAD`
-5. Ensemble CAPE spread > 1000 J/kg + GO/STRONG → **MAYBE** + `ENS_CAPE_SPREAD`
-6. 0 критических + 0 quality + 0 positives → **NO DATA**
+3. min cloud base < 2000m MSL + статус GO/STRONG → **MAYBE** + `LOW_BASE_HARD`
+4. Per-model disagreement (NO-GO/UNLIKELY в одной+ модели) + GO/STRONG → **MAYBE/UNLIKELY** + `MODEL_DISAGREE`
+5. Model agreement confidence = LOW + статус GO/STRONG → **MAYBE** + `LOW_CONFIDENCE`
+6. Ensemble wind spread > 5 м/с + GO/STRONG → **MAYBE** + `ENS_WIND_SPREAD`
+7. Ensemble CAPE spread > 1000 J/kg + GO/STRONG → **MAYBE** + `ENS_CAPE_SPREAD`
+8. 0 критических + 0 quality + 0 positives + tw_hours=0 → **NO DATA**

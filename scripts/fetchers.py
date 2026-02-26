@@ -23,7 +23,7 @@ import zipfile
 from datetime import datetime, timezone
 from urllib.error import URLError
 from urllib.request import urlopen, Request
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urlsplit
 from xml.etree import ElementTree as ET
 from zoneinfo import ZoneInfo
 
@@ -136,10 +136,18 @@ _MAX_RETRIES = 3
 _RETRY_DELAY = 2  # seconds
 
 
+def _url_for_log(url: str) -> str:
+    parsed = urlsplit(url)
+    host = parsed.netloc or "unknown-host"
+    path = parsed.path or "/"
+    return f"{host}{path}"
+
+
 def _fetch_with_retry(url: str, timeout: int = 30) -> bytes:
     """Fetch URL with retries on transient errors (SSL, connection, timeout)."""
     last_err = None
-    for attempt in range(_MAX_RETRIES):
+    url_log = _url_for_log(url)
+    for attempt in range(1, _MAX_RETRIES + 1):
         try:
             req = Request(url, headers={"User-Agent": f"PG-Weather-Triage/{APP_VERSION}"})
             with urlopen(req, timeout=timeout) as resp:
@@ -148,9 +156,26 @@ def _fetch_with_retry(url: str, timeout: int = 30) -> bytes:
             last_err = e
             # Don't retry HTTP 4xx errors (bad request, not found, etc.)
             if hasattr(e, 'code') and 400 <= e.code < 500:
+                print(
+                    f"    ✗ fetch failed ({url_log}) attempt {attempt}/{_MAX_RETRIES}: "
+                    f"HTTP {e.code} (non-retryable)",
+                    file=sys.stderr,
+                )
                 raise
-            if attempt < _MAX_RETRIES - 1:
-                time.sleep(_RETRY_DELAY * (attempt + 1))
+            if attempt < _MAX_RETRIES:
+                delay = _RETRY_DELAY * attempt
+                print(
+                    f"    ! fetch failed ({url_log}) attempt {attempt}/{_MAX_RETRIES}: {e}; "
+                    f"retrying in {delay}s",
+                    file=sys.stderr,
+                )
+                time.sleep(delay)
+            else:
+                print(
+                    f"    ✗ fetch failed ({url_log}) attempt {attempt}/{_MAX_RETRIES}: {e}; "
+                    "no retries left",
+                    file=sys.stderr,
+                )
     raise last_err
 
 
