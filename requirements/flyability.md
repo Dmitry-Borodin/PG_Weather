@@ -1,6 +1,6 @@
 # Оценка лётности — как считаются очки и статусы
 
-**Версия:** 2.6
+**Версия:** 2.7
 
 ---
 
@@ -59,7 +59,8 @@ ICON-only поле: `updraft` — берётся из ICON напрямую.
 | Поле | Формула | Зависимости |
 |------|---------|-------------|
 | `cloudbase_msl` | `125 × (T_2m − Td_2m) + elev` | temperature_2m, dewpoint_2m, location.elev |
-| `lapse_rate` | `(T_850 − T_700) / 1.5` °C/km | temperature_850hPa, temperature_700hPa |
+| `lapse_rate` | Env. lapse ground→base: `(T_2m − T_base) / Δh_km`, где T_base интерполируется по ступеням (elev→850hPa→700hPa) | temperature_2m, temperature_850hPa, temperature_700hPa, cloudbase_msl, elev |
+| `wind_at_base` | Ветер на высоте базы, интерполяция между 850 и 700 hPa: base≤1500m→W850, 1500–3000m→interp, ≥3000m→W700 | windspeed_850hPa, windspeed_700hPa, cloudbase_msl |
 | `wstar` | Deardorff: `(g/T_K × BL_h × 0.4·SWR / (1.1·1005))^(1/3)`, возвращает **None** если аргумент ≤ 0 | boundary_layer_height (GFS), shortwave_radiation, temperature_2m |
 | `updraft` | ICON native: максимальная вертикальная скорость конвективного восходящего потока (м/с) от поверхности до 10 км | ICON D2 only (2 км, ≤48ч); EU/Global возвращают null |
 | `gust_factor` | `windgusts_10m − windspeed_10m` м/с | windgusts_10m, windspeed_10m |
@@ -114,7 +115,7 @@ Flyable = можно лететь (не сдует, не зальёт). Thermal 
 
 | Флаг | Условие | Агрегация |
 |------|---------|-----------|
-| `SUSTAINED_WIND_700` | mean(windspeed_700hPa) > 5.0 м/с | среднее по окну 09–18 |
+| `SUSTAINED_WIND_BASE` | mean(wind_at_base) > 5.0 м/с | среднее по окну 09–18, wind_at_base интерполируется между 850/700 hPa на высоте базы |
 | `GUSTS_HIGH` | mean(windgusts_10m) > 10.0 м/с | среднее по окну 09–18 |
 | `PRECIP_13` | precipitation @13:00 > 0.5 мм | точка 13:00 |
 | `NO_FLYABLE_WINDOW` | continuous_flyable_hours = 0 | compute_flyable_window |
@@ -197,7 +198,7 @@ Best ICON:  icon_d2 → icon_eu → icon_global → icon_seamless(legacy)
 | cloudcover | ±20% |
 | precipitation | ±0.5 мм |
 | cape | ±200 J/kg |
-| windspeed_850hPa | ±2.0 м/с |
+| windspeed_700hPa | ±2.0 м/с |
 
 ### Формула
 

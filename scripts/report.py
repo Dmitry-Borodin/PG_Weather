@@ -66,14 +66,14 @@ def print_triage(results, forecast_date):
               f"(min: {_fv(a.get('cb_min_msl'),' m',0)}, "
               f"typ: {_fv(a.get('cb_typ_msl'),' m',0)}) "
               f"margin: {_fv(a.get('base_margin_over_peaks'),' m',0)}")
-        print(f"     Wind @700: {_fv(a.get('wind_700hPa_ms'),' m/s',1)} "
-              f"(mean window: {_fv(a.get('sustained_wind_700_mean'),' m/s',1)})  |  "
+        print(f"     Wind @base: {_fv(a.get('wind_at_base_ms'),' m/s',1)} "
+              f"(mean window: {_fv(a.get('sustained_wind_base_mean'),' m/s',1)})  |  "
               f"Gusts: {_fv(a.get('gusts_10m_ms'),' m/s',1)} "
               f"(mean window: {_fv(a.get('mean_gust_window'),' m/s',1)})  |  "
               f"GF max: {_fv(a.get('max_gust_factor_window'),' m/s',1)}")
         print(f"     CAPE: {_fv(a.get('cape_J_per_kg'),'',0)}  |  "
               f"LI: {_fv(a.get('lifted_index'))}  |  "
-              f"Lapse: {_fv(a.get('lapse_rate_C_per_km'),' °C/km',1)}  |  "
+              f"Lapse gnd→base: {_fv(a.get('lapse_rate_C_per_km'),' °C/km',1)}  |  "
               f"BL: {_fv(a.get('boundary_layer_height_m'),' m',0)}  |  "
               f"W*: {_fv(a.get('wstar_ms'),' m/s',2)}")
         cfw = a.get("continuous_flyable_hours", 0)
@@ -161,7 +161,7 @@ def generate_markdown_report(results, date, gen_time, locations_dict):
 
     # ── Summary table ──
     L.append("## 📊 Summary\n")
-    L.append("| Location | Drive | Status | Base @13 | Margin | W700 mean | Gusts max | CAPE | Lapse | BL | W* | Thermal | Flyable | Confidence |")
+    L.append("| Location | Drive | Status | Base @13 | Margin | Wbase mean | Gusts max | CAPE | Lapse | BL | W* | Thermal | Flyable | Confidence |")
     L.append("|----------|-------|--------|----------|--------|-----------|-----------|------|-------|----|-----|---------|---------|------------|")
     for r in sorted_r:
         a = r.get("assessment", {})
@@ -176,7 +176,7 @@ def generate_markdown_report(results, date, gen_time, locations_dict):
             f"| {em} **{s}** "
             f"| {_v(a.get('cloudbase_msl'),'m')} "
             f"| {_v(a.get('base_margin_over_peaks'),'m')} "
-            f"| {_v(a.get('sustained_wind_700_mean'),'m/s')} "
+            f"| {_v(a.get('sustained_wind_base_mean'),'m/s')} "
             f"| {_v(a.get('mean_gust_window'),'m/s')} "
             f"| {_v(a.get('cape_J_per_kg'),'',0)} "
             f"| {_v(a.get('lapse_rate_C_per_km'),'°C/km')} "
@@ -202,16 +202,17 @@ def generate_markdown_report(results, date, gen_time, locations_dict):
         L.append(f"- **Cloud Base**: {_v(a.get('cloudbase_msl'),'m')} MSL "
                  f"(min: {_v(a.get('cb_min_msl'),'m')}, typ: {_v(a.get('cb_typ_msl'),'m')}) "
                  f"margin: {_v(a.get('base_margin_over_peaks'),'m')} over {loc.get('peaks','?')}m")
-        L.append(f"- **Wind @700hPa**: {_v(a.get('wind_700hPa_ms'),'m/s')} "
-                 f"(window mean: {_v(a.get('sustained_wind_700_mean'),'m/s')})  |  "
-                 f"**@700hPa**: {_v(a.get('wind_700hPa_ms'),'m/s')}")
+        L.append(f"- **Wind @base**: {_v(a.get('wind_at_base_ms'),'m/s')} "
+                 f"(window mean: {_v(a.get('sustained_wind_base_mean'),'m/s')})  |  "
+                 f"**W850**: {_v(a.get('wind_850hPa_ms'),'m/s')}  |  "
+                 f"**W700**: {_v(a.get('wind_700hPa_ms'),'m/s')}")
         L.append(f"- **Gusts**: {_v(a.get('gusts_10m_ms'),'m/s')} "
                  f"(window mean: {_v(a.get('mean_gust_window'),'m/s')})  |  "
                  f"**Gust factor max**: {_v(a.get('max_gust_factor_window'),'m/s')}")
         L.append(f"- **CAPE**: {_v(a.get('cape_J_per_kg'),'J/kg',0)}  |  "
                  f"**LI**: {_v(a.get('lifted_index'))}  |  "
                  f"**CIN**: {_v(a.get('cin_J_per_kg'),'J/kg',0)}")
-        L.append(f"- **Lapse**: {_v(a.get('lapse_rate_C_per_km'),'°C/km')}  |  "
+        L.append(f"- **Lapse gnd→base**: {_v(a.get('lapse_rate_C_per_km'),'°C/km')}  |  "
                  f"**BL**: {_v(a.get('boundary_layer_height_m'),'m',0)}  |  "
                  f"**W***: {_v(a.get('wstar_ms'),' m/s',2)}")
         L.append(f"- **Cloud**: {_v(a.get('cloudcover_pct'),'%',0)} "

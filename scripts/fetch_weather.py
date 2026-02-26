@@ -40,7 +40,8 @@ from fetchers import (
 from analysis import (
     WINDOW_START_H, WINDOW_END_H,
     _extract_at_13_local, _extract_window_stats,
-    estimate_cloudbase_msl, lapse_rate, estimate_wstar,
+    estimate_cloudbase_msl, lapse_rate, lapse_ground_to_base,
+    wind_at_base_height, estimate_wstar,
     build_averaged_profile, build_per_model_profiles, assess_per_model,
     compute_flyable_window, compute_flags,
     compute_model_agreement, compute_ensemble_uncertainty,
@@ -315,13 +316,17 @@ def assess_location(loc_key: str, loc: dict, date: str, sources_list: list) -> d
     cbm = estimate_cloudbase_msl(t2m, td, loc["elev"])
     ws850 = _best13("windspeed_850hPa", "wind_850hPa_ms")
     ws700 = _best13("windspeed_700hPa", "wind_700hPa_ms")
+    w_base = wind_at_base_height(ws850, ws700, cbm)
+    if w_base is not None:
+        w_base = round(w_base, 1)
     gusts = _best13("windgusts_10m", "gusts_10m_ms")
     cape  = _best13("cape", "cape_J_per_kg")
     t850  = _best13("temperature_850hPa", "t850")
     t700  = _best13("temperature_700hPa", "t700")
     cloud = _best13("cloudcover", "cloudcover_pct")
     prec  = _best13("precipitation", "precipitation_mm")
-    lr    = lapse_rate(t850, t700)
+    lr    = lapse_ground_to_base(t2m, loc["elev"], t850, t700, cbm)
+    lr_850_700 = lapse_rate(t850, t700)
 
     # GFS-only fields
     gfs_src = None
@@ -348,9 +353,9 @@ def assess_location(loc_key: str, loc: dict, date: str, sources_list: list) -> d
     bm = (cbm - loc["peaks"]) if cbm is not None else None
 
     # Window metrics
-    winds_700_win = [p["wind_700"] for p in profile
-                     if WINDOW_START_H <= int(p["hour"][:2]) <= WINDOW_END_H
-                     and p["wind_700"] is not None]
+    winds_base_win = [p["wind_at_base"] for p in profile
+                      if WINDOW_START_H <= int(p["hour"][:2]) <= WINDOW_END_H
+                      and p["wind_at_base"] is not None]
     gusts_win = [p["gusts"] for p in profile
                  if WINDOW_START_H <= int(p["hour"][:2]) <= WINDOW_END_H
                  and p["gusts"] is not None]
@@ -362,11 +367,13 @@ def assess_location(loc_key: str, loc: dict, date: str, sources_list: list) -> d
         # At 13:00 local
         "temp_2m": t2m, "dewpoint_2m": td,
         "cloudbase_msl": cbm, "base_margin_over_peaks": bm,
+        "wind_at_base_ms": w_base,
         "wind_850hPa_ms": ws850, "wind_700hPa_ms": ws700,
         "gusts_10m_ms": gusts,
         "cape_J_per_kg": cape, "cin_J_per_kg": cin, "lifted_index": li,
         "boundary_layer_height_m": bl_h,
-        "lapse_rate_C_per_km": lr, "wstar_ms": ws_v,
+        "lapse_rate_C_per_km": lr, "lapse_850_700_C_per_km": lr_850_700,
+        "wstar_ms": ws_v,
         "updraft_ms": updraft_13,
         "cloudcover_pct": cloud,
         "cloudcover_low_pct": _best13("cloudcover_low", "cloudcover_low_pct"),
@@ -385,7 +392,7 @@ def assess_location(loc_key: str, loc: dict, date: str, sources_list: list) -> d
         "thermal_window_peak": tw.get("peak_hour"),
 
         # Window-based metrics
-        "sustained_wind_700_mean": round(statistics.mean(winds_700_win), 1) if winds_700_win else None,
+        "sustained_wind_base_mean": round(statistics.mean(winds_base_win), 1) if winds_base_win else None,
         "mean_gust_window": round(statistics.mean(gusts_win), 1) if gusts_win else None,
         "max_gust_factor_window": round(max(gf_win), 1) if gf_win else None,
         "continuous_flyable_hours": flyable["continuous_flyable_hours"],

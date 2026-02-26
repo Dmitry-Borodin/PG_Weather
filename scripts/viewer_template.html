@@ -203,7 +203,7 @@ function agreeBar(score){
 function valColor(field,val,peaks){
   if(val==null)return'';
   switch(field){
-  case'wind_700':return val>5?'var(--nogo)':val>3.5?'var(--unlikely)':'';
+  case'wind_at_base':return val>5?'var(--nogo)':val>3.5?'var(--unlikely)':'';
   case'gusts':return val>10?'var(--nogo)':val>7?'var(--unlikely)':'';
   case'gust_factor':return val>7?'var(--nogo)':val>4?'var(--unlikely)':'';
   case'wind_10m':return val>8?'var(--nogo)':val>5?'var(--unlikely)':'';
@@ -243,7 +243,6 @@ function render(date){
     return (SO[sa]||5)-(SO[sb]||5);
   });
   var h='<h2>\ud83d\udcc5 Forecast for: '+esc(forecastDate)+'</h2>';
-  h+=renderRef();
   h+=renderMainTable(locs);
   document.getElementById('m').innerHTML=h;
   document.querySelectorAll('.sum-row').forEach(function(row){
@@ -261,27 +260,6 @@ function render(date){
   });
 }
 
-function renderRef(){
-  var h='<div class="sbox" style="margin-bottom:0.75rem">';
-  h+='<details class="ref-details"><summary class="ref-summary">';
-  h+='<span class="ref-title"><span>\u2139\ufe0f</span><span>Parameter Reference &amp; Score</span></span>';
-  h+='<span class="ref-arrow" aria-hidden="true"></span></summary>';
-  h+='<div style="font-size:0.75rem;color:var(--muted);margin:0.5rem 0 0;line-height:1.8">';
-  h+='<b>Score v2.0</b> \u2014 base from thermal window hours, then: critical \u00d7(\u22123), LOW_BASE \u00d7(\u22122), quality/danger \u00d7(\u22121), positive \u00d7(+1), VERY_HIGH_BASE \u00d7(+2). ';
-  h+='Thresholds: \u2264\u22125 NO\u2011GO, \u2264\u22122 UNLIKELY, \u22641 MAYBE, \u22644 GO, \u22655 STRONG.<br>';
-  h+='<b>Thermal window</b> \u2014 hours with W*\u22651.5 m/s, precip\u22640.5 mm, base\u22651000m MSL, cloud<60%. ';
-  h+='Base score: 0h=\u22126, 1\u20132h=\u22122, 3\u20134h=+1, 5\u20136h=+4, 7+h=+6.<br>';
-  h+='<b>Base</b> \u2014 cloudbase MSL (m) from T\u2212Td. <b>CB min/typ</b> \u2014 min/median base over 09\u201318 window.<br>';
-  h+='<b>W700 mean</b> \u2014 sustained wind 700 hPa mean over window. >5 m/s = closed route risk.<br>';
-  h+='<b>Gusts max</b> \u2014 max gust over window. <b>GF max</b> \u2014 max gust factor (gust\u2212mean).<br>';
-  h+='<b>Flyable</b> \u2014 longest continuous window with no precip, gusts\u226412, wind\u22648.<br>';
-  h+='<b>CAPE</b> \u2014 J/kg. >300 thermals, >700 strong, >1500 storm risk.<br>';
-  h+='<b>Lapse</b> \u2014 850\u2192700 hPa \u00b0C/km. >7 strong, <5.5 weak.<br>';
-  h+='<b>BL</b> \u2014 Boundary Layer height (m). <b>W*</b> \u2014 Deardorff thermal strength (m/s).<br>';
-  h+='<b>Confidence</b> \u2014 model agreement ECMWF vs ICON. HIGH\u226580%, MEDIUM\u226550%, LOW<50%.';
-  h+='</div></details></div>';
-  return h;
-}
 
 function renderMainTable(locs){
   var NC=19;
@@ -291,7 +269,7 @@ function renderMainTable(locs){
   h+='<th>Location</th><th>Drive</th><th>Status</th><th class="n">Score</th>';
   h+='<th class="n">Base</th><th class="n">Margin</th>';
   h+='<th class="n">CB min</th><th class="n">CB typ</th>';
-  h+='<th class="n">W700 m</th><th class="n">Gust mx</th><th class="n">GF mx</th>';
+  h+='<th class="n">Wbase m</th><th class="n">Gust mx</th><th class="n">GF mx</th>';
   h+='<th class="n">CAPE</th><th class="n">Lapse</th>';
   h+='<th class="n">BL</th><th class="n">W*</th>';
   h+='<th class="n">Cloud</th><th>Thermal</th><th>Confidence</th>';
@@ -316,7 +294,7 @@ function renderMainTable(locs){
     h+='<td class="n">'+fmt(a.base_margin_over_peaks,'',0)+'</td>';
     h+='<td class="n">'+fmt(a.cb_min_msl,'',0)+'</td>';
     h+='<td class="n">'+fmt(a.cb_typ_msl,'',0)+'</td>';
-    h+='<td class="n">'+fmtSrc(a.sustained_wind_700_mean,'',1,srcOf('wind_700hPa_ms'))+'</td>';
+    h+='<td class="n">'+fmtSrc(a.sustained_wind_base_mean,'',1,srcOf('wind_at_base_ms'))+'</td>';
     h+='<td class="n">'+fmtSrc(a.mean_gust_window,'',1,srcOf('gusts_10m_ms'))+'</td>';
     h+='<td class="n">'+fmt(a.max_gust_factor_window,'',1)+'</td>';
     h+='<td class="n">'+fmtSrc(a.cape_J_per_kg,'',0,srcOf('cape_J_per_kg'))+'</td>';
@@ -339,25 +317,27 @@ function renderMainTable(locs){
     return'<span class="model-pill">'+esc(m.short)+': '+esc(m.name)+' ('+esc(m.api)+')</span>';
   }).join(' ');
   h+='<div style="margin-top:0.3rem">'+pills+'</div>';
-  /* Summary table legend */
+  /* Parameter reference & column legend (merged) */
   h+='<details class="ref-details" style="margin-top:0.3rem"><summary class="ref-summary">';
-  h+='<span class="ref-title"><span>\u2139\ufe0f</span><span>Column legend</span></span>';
+  h+='<span class="ref-title"><span>\u2139\ufe0f</span><span>Parameter Reference &amp; Score</span></span>';
   h+='<span class="ref-arrow"></span></summary>';
-  h+='<dl class="ens-legend">';
-  h+='<dt>Base</dt><dd>Cloudbase MSL @13:00 (m) \u2014 estimated from T\u2212Td spread + station elevation</dd>';
-  h+='<dt>Margin</dt><dd>Base minus peak elevation (m). Positive = base above peaks</dd>';
-  h+='<dt>CB min / CB typ</dt><dd>Minimum and typical (median) cloudbase over 09\u201318 window (m MSL)</dd>';
-  h+='<dt>W700 m</dt><dd>Mean wind 700 hPa over window (m/s). >5 = dangerous for XC closed routes</dd>';
-  h+='<dt>Gust mx</dt><dd>Maximum surface gust over window (m/s). >10 = critical</dd>';
-  h+='<dt>GF mx</dt><dd>Max gust factor = gust \u2212 mean wind (m/s). >7 = turbulence risk</dd>';
-  h+='<dt>CAPE</dt><dd>Convective energy @13:00 (J/kg). 300\u20131500 good, >1500 storm risk</dd>';
-  h+='<dt>Lapse</dt><dd>Lapse rate 850\u2192700 hPa @13:00 (\u00b0C/km). >7 strong, <5.5 weak</dd>';
-  h+='<dt>BL</dt><dd>Boundary layer height @13:00 (m, GFS). >1500 = deep mixing</dd>';
-  h+='<dt>W*</dt><dd>Deardorff convective velocity @13:00 (m/s). \u22651.5 strong thermals</dd>';
-  h+='<dt>Cloud</dt><dd>Total cloud cover @13:00 (%)</dd>';
-  h+='<dt>Thermal</dt><dd>Thermal window hours (W*\u22651.5 + base\u22651000m + cloud<60% + precip\u22640.5)</dd>';
-  h+='<dt>Confidence</dt><dd>Model agreement ECMWF vs ICON. HIGH\u226580%, MEDIUM\u226550%, LOW<50%</dd>';
-  h+='</dl></details>';
+  h+='<div style="font-size:0.75rem;color:var(--muted);margin:0.5rem 0 0;line-height:1.8">';
+  h+='<b>Score v2.0</b> \u2014 base from thermal window hours, then: critical \u00d7(\u22123), LOW_BASE \u00d7(\u22122), quality/danger \u00d7(\u22121), positive \u00d7(+1), VERY_HIGH_BASE \u00d7(+2). ';
+  h+='Thresholds: \u2264\u22125 NO\u2011GO, \u2264\u22122 UNLIKELY, \u22641 MAYBE, \u22644 GO, \u22655 STRONG.<br>';
+  h+='<b>Thermal window</b> \u2014 hours with W*\u22651.5 m/s, precip\u22640.5 mm, base\u22651000m MSL, cloud<70%. ';
+  h+='Base score: 0h=\u22126, 1\u20132h=\u22122, 3\u20134h=+1, 5\u20136h=+4, 7+h=+6.<br>';
+  h+='<b>Flyable window</b> \u2014 longest continuous stretch with precip\u22640.5, gusts\u226412, wind\u22648 m/s.<br>';
+  h+='<b>Base</b> \u2014 cloudbase MSL (m) from T\u2212Td + station elevation. <b>Margin</b> \u2014 base minus peak elevation. ';
+  h+='<b>CB min/typ</b> \u2014 min/median base over 09\u201318 window.<br>';
+  h+='<b>Wbase m</b> \u2014 wind at cloud base height, interpolated between 850/700 hPa, mean over window. >5 m/s = closed route risk.<br>';
+  h+='<b>Gust mx</b> \u2014 max gust over window (>10 critical). <b>GF mx</b> \u2014 max gust factor = gust\u2212mean (>7 turbulence risk).<br>';
+  h+='<b>CAPE</b> \u2014 convective energy @13:00 (J/kg). 300\u20131500 good, >1500 storm risk.<br>';
+  h+='<b>Lapse</b> \u2014 environmental lapse rate ground\u2192cloudbase (\u00b0C/km). >7 strong, <5.5 weak.<br>';
+  h+='<b>BL</b> \u2014 boundary layer height @13:00 (m, GFS). >1500 = deep mixing. ';
+  h+='<b>W*</b> \u2014 Deardorff convective velocity (m/s). \u22651.5 = strong thermals.<br>';
+  h+='<b>Cloud</b> \u2014 total cloud cover @13:00 (%).<br>';
+  h+='<b>Confidence</b> \u2014 model agreement ECMWF vs ICON. HIGH\u226580%, MEDIUM\u226550%, LOW<50%.';
+  h+='</div></details>';
   h+='</div>';
   return h;
 }
@@ -379,7 +359,8 @@ function renderCardBody(r){
     ['Base MSL @13',fmt(a.cloudbase_msl,'m',0)+srcTag('temp_2m'),''],
     ['Margin',fmt(a.base_margin_over_peaks,'m',0),''],
     ['CB min / typ',fmt(a.cb_min_msl,'',0)+' / '+fmt(a.cb_typ_msl,'',0),'over window'],
-    ['W700 mean',fmt(a.sustained_wind_700_mean,' m/s',1)+srcTag('wind_700hPa_ms'),'window mean'],
+    ['Wbase mean',fmt(a.sustained_wind_base_mean,' m/s',1)+srcTag('wind_at_base_ms'),'window mean, interp 850/700'],
+    ['Wbase @13',fmt(a.wind_at_base_ms,' m/s',1)+srcTag('wind_at_base_ms'),''],
     ['W700 @13',fmt(a.wind_700hPa_ms,' m/s',1)+srcTag('wind_700hPa_ms'),''],
     ['W850 @13',fmt(a.wind_850hPa_ms,' m/s',1)+srcTag('wind_850hPa_ms'),''],
     ['Gusts @13',fmt(a.gusts_10m_ms,' m/s',1)+srcTag('gusts_10m_ms'),''],
@@ -388,7 +369,7 @@ function renderCardBody(r){
     ['CAPE',fmt(a.cape_J_per_kg,' J/kg',0)+srcTag('cape_J_per_kg'),''],
     ['LI',fmt(a.lifted_index,'',1)+srcTag('lifted_index'),''],
     ['CIN',fmt(a.cin_J_per_kg,' J/kg',0)+srcTag('cin_J_per_kg'),''],
-    ['Lapse',fmt(a.lapse_rate_C_per_km,' \u00b0C/km',1)+srcTag('t850'),'850\u2192700'],
+    ['Lapse gnd\u2192base',fmt(a.lapse_rate_C_per_km,' \u00b0C/km',1)+srcTag('t850'),'ground to cloudbase'],
     ['BL height',fmt(a.boundary_layer_height_m,'m',0)+srcTag('boundary_layer_height_m'),''],
     ['W*',fmt(a.wstar_ms,' m/s',2),'Deardorff'],
     ['Updraft',fmt(a.updraft_ms,' m/s',2)+srcTag('updraft_ms'),'ICON native'],
@@ -429,7 +410,7 @@ function renderCardBody(r){
     h+='<h3>Score Breakdown</h3>';
     h+='<div class="score-box">';
     /* Classify fired flags by category */
-    var CRIT_SET={SUSTAINED_WIND_700:1,GUSTS_HIGH:1,PRECIP_13:1,NO_FLYABLE_WINDOW:1};
+    var CRIT_SET={SUSTAINED_WIND_BASE:1,GUSTS_HIGH:1,PRECIP_13:1,NO_FLYABLE_WINDOW:1};
     var QUAL_SET={OVERCAST:1,STABLE:1,SHORT_WINDOW:1,GUST_FACTOR:1};
     var DANG_SET={HIGH_CAPE:1,VERY_UNSTABLE:1,CAPE_RISING:1};
     var critNames=[],baseNames=[],qualNames=[],dangNames=[],posNames=[];
@@ -452,7 +433,7 @@ function renderCardBody(r){
     h+='<details class="ref-details"><summary class="ref-summary"><span class="ref-title">Legend</span><span class="ref-arrow">\u25b8</span></summary>';
     h+='<div class="ens-legend">';
     h+='<b>Base score</b> \u2014 from thermal window duration: 0h=\u22126, 1\u20132h=\u22122, 3\u20134h=+1, 5\u20136h=+4, 7h+=+6<br>';
-    h+='<b>Critical</b> (\u00d7\u22123) \u2014 SUSTAINED_WIND_700, GUSTS_HIGH, PRECIP_13, NO_FLYABLE_WINDOW<br>';
+    h+='<b>Critical</b> (\u00d7\u22123) \u2014 SUSTAINED_WIND_BASE, GUSTS_HIGH, PRECIP_13, NO_FLYABLE_WINDOW<br>';
     h+='<b>Low base</b> (\u00d7\u22122) \u2014 min cloudbase margin < 1000m over peaks<br>';
     h+='<b>Quality</b> (\u00d7\u22121) \u2014 OVERCAST, STABLE, SHORT_WINDOW, GUST_FACTOR<br>';
     h+='<b>Danger</b> (\u00d7\u22121) \u2014 HIGH_CAPE, CAPE_RISING, VERY_UNSTABLE<br>';
@@ -596,7 +577,7 @@ function renderCardBody(r){
     h+='<h3><span class="model-pill">'+esc(short)+': '+esc(label)+'</span> \u2014 Hourly (08:00\u201318:00)</h3>';
     h+='<div class="table-wrap"><table class="htbl">';
     h+='<tr><th>Hour</th><th>T</th><th>Dew</th><th>Base</th><th>Cloud</th><th>CL/CM/CH</th>';
-    h+='<th>Prcp</th><th>W10</th><th>Gust</th><th>GF</th><th>W850</th><th>W700</th>';
+    h+='<th>Prcp</th><th>W10</th><th>Gust</th><th>GF</th><th>Wbase</th><th>W850</th><th>W700</th>';
     h+='<th>RH850</th><th>RH700</th><th>Lapse</th><th>CAPE</th><th>SW</th>';
     if(extraCols.updraft)h+='<th>Updr</th>';
     if(extraCols.gfs)h+='<th>BL</th><th>LI</th><th>CIN</th><th>W*</th>';
@@ -617,8 +598,9 @@ function renderCardBody(r){
       h+='<td>'+fmtC(item.wind_10m,'',1,'wind_10m')+'</td>';
       h+='<td>'+fmtC(item.gusts,'',1,'gusts')+'</td>';
       h+='<td>'+fmtC(item.gust_factor,'',1,'gust_factor')+'</td>';
+      h+='<td>'+fmtC(item.wind_at_base,'',1,'wind_at_base')+'</td>';
       h+='<td>'+fmt(item.wind_850,'',1)+'</td>';
-      h+='<td>'+fmtC(item.wind_700,'',1,'wind_700')+'</td>';
+      h+='<td>'+fmt(item.wind_700,'',1)+'</td>';
       h+='<td>'+fmt(item.rh_850,'',0)+'</td>';
       h+='<td>'+fmt(item.rh_700,'',0)+'</td>';
       h+='<td>'+fmtC(item.lapse_rate,'',1,'lapse_rate')+'</td>';

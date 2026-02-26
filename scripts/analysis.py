@@ -35,7 +35,7 @@ _GFS_ONLY_FIELDS = {"boundary_layer_height", "lifted_index", "convective_inhibit
 # updraft: ICON D2 only (2 km, ≤48ч) — EU/Global return null (v2.3)
 
 # Flag categories for scoring
-CRITICAL_TAGS = {"SUSTAINED_WIND_700", "GUSTS_HIGH", "PRECIP_13", "NO_FLYABLE_WINDOW"}
+CRITICAL_TAGS = {"SUSTAINED_WIND_BASE", "GUSTS_HIGH", "PRECIP_13", "NO_FLYABLE_WINDOW"}
 QUALITY_TAGS  = {"OVERCAST", "STABLE", "SHORT_WINDOW", "GUST_FACTOR"}
 DANGER_TAGS   = {"HIGH_CAPE", "VERY_UNSTABLE", "CAPE_RISING"}
 
@@ -123,6 +123,21 @@ def _extract_window_stats(hourly: dict, date: str,
 # Computations
 # ══════════════════════════════════════════════
 
+# Standard approximate heights of pressure levels (MSL)
+_H850 = 1500   # 850 hPa ≈ 1500 m MSL
+_H700 = 3000   # 700 hPa ≈ 3000 m MSL
+
+
+def _interp(val_low, h_low, val_high, h_high, target_h):
+    """Linear interpolation between two levels."""
+    if val_low is None or val_high is None:
+        return None
+    if h_high == h_low:
+        return val_low
+    frac = (target_h - h_low) / (h_high - h_low)
+    return val_low + frac * (val_high - val_low)
+
+
 def estimate_cloudbase_msl(temp_c, dewpoint_c, elev_m):
     if temp_c is None or dewpoint_c is None:
         return None
@@ -130,9 +145,53 @@ def estimate_cloudbase_msl(temp_c, dewpoint_c, elev_m):
 
 
 def lapse_rate(t850, t700):
+    """Legacy 850→700 hPa lapse rate (°C/km). Kept for reference."""
     if t850 is None or t700 is None:
         return None
     return round((t850 - t700) / 1.5, 1)
+
+
+def lapse_ground_to_base(t2m, elev, t850, t700, base_msl):
+    """Environmental lapse rate from ground to cloud base (°C/km).
+
+    Interpolates T at base height from available levels:
+      ground(elev, t2m) — 850 hPa(1500m, t850) — 700 hPa(3000m, t700)
+    Then: lapse = (T_ground − T_base) / Δh_km
+    """
+    if t2m is None or base_msl is None or base_msl <= elev:
+        return None
+    # Determine T at cloud base by piecewise linear interpolation
+    if base_msl <= _H850:
+        if t850 is None:
+            return None
+        t_base = _interp(t2m, elev, t850, _H850, base_msl)
+    else:
+        # base > 1500m: interpolate (or extrapolate) between 850 and 700
+        if t850 is None or t700 is None:
+            return None
+        t_base = _interp(t850, _H850, t700, _H700, base_msl)
+    if t_base is None:
+        return None
+    dh_km = (base_msl - elev) / 1000.0
+    if dh_km <= 0:
+        return None
+    return round((t2m - t_base) / dh_km, 1)
+
+
+def wind_at_base_height(ws850, ws700, base_msl):
+    """Interpolate wind speed at cloud base height between pressure levels.
+
+    base ≤ 1500m → wind_850 (closest free-atmosphere level)
+    1500m < base < 3000m → linear interpolation between 850 and 700
+    base ≥ 3000m → wind_700
+    """
+    if base_msl is None:
+        return None
+    if base_msl <= _H850:
+        return ws850
+    if base_msl >= _H700:
+        return ws700
+    return _interp(ws850, _H850, ws700, _H700, base_msl)
 
 
 def estimate_wstar(bl_h, sw_rad, temp_c):
@@ -246,9 +305,10 @@ def build_averaged_profile(per_model_profiles: dict, sources: dict,
         gust = _avg(iv.get("gusts"), ev.get("gusts"))
         ws850 = _avg(iv.get("wind_850"), ev.get("wind_850"))
         ws700 = _avg(iv.get("wind_700"), ev.get("wind_700"))
+        t850_v = _avg(iv.get("t850"), ev.get("t850"), 1)
+        t700_v = _avg(iv.get("t700"), ev.get("t700"), 1)
         rh850 = _avg(iv.get("rh_850"), ev.get("rh_850"), 0)
         rh700 = _avg(iv.get("rh_700"), ev.get("rh_700"), 0)
-        lr = _avg(iv.get("lapse_rate"), ev.get("lapse_rate"), 1)
         cape_v = _avg(iv.get("cape"), ev.get("cape"), 0)
         sw = _avg(iv.get("shortwave_radiation"), ev.get("shortwave_radiation"), 0)
 
@@ -269,6 +329,9 @@ def build_averaged_profile(per_model_profiles: dict, sources: dict,
         # Derived fields computed on averaged values
         base_msl = estimate_cloudbase_msl(t2m, td, loc["elev"])
         ws_v = estimate_wstar(bl, sw, t2m)
+        w_base = wind_at_base_height(ws850, ws700, base_msl)
+        lr = lapse_ground_to_base(t2m, loc["elev"], t850_v, t700_v, base_msl)
+        lr_850_700 = lapse_rate(t850_v, t700_v)
 
         gust_factor = None
         if gust is not None and ws10 is not None:
@@ -291,8 +354,11 @@ def build_averaged_profile(per_model_profiles: dict, sources: dict,
             "precipitation": prec,
             "wind_10m": ws10, "gusts": gust, "gust_factor": gust_factor,
             "wind_850": ws850, "wind_700": ws700,
+            "wind_at_base": round(w_base, 1) if w_base is not None else None,
+            "t850": t850_v, "t700": t700_v,
             "rh_850": rh850, "rh_700": rh700,
             "lapse_rate": lr,
+            "lapse_850_700": lr_850_700,
             "bl_height": bl, "cape": cape_v, "cin": cin, "lifted_index": li,
             "shortwave_radiation": sw,
             "updraft": round(updraft_v, 2) if updraft_v is not None else None,
@@ -437,7 +503,9 @@ def build_per_model_profiles(sources: dict, date: str, loc: dict) -> dict:
             updraft_v = _get_val(h, times, hour, "updraft")
 
             base_msl = estimate_cloudbase_msl(t2m, td, loc["elev"])
-            lr = lapse_rate(t850, t700)
+            w_base = wind_at_base_height(ws850, ws700, base_msl)
+            lr = lapse_ground_to_base(t2m, loc["elev"], t850, t700, base_msl)
+            lr_850_700 = lapse_rate(t850, t700)
             ws = estimate_wstar(bl, sw, t2m)
 
             gust_factor = None
@@ -455,8 +523,11 @@ def build_per_model_profiles(sources: dict, date: str, loc: dict) -> dict:
                 "precipitation": prec,
                 "wind_10m": ws10, "gusts": gust, "gust_factor": gust_factor,
                 "wind_850": ws850, "wind_700": ws700,
+                "wind_at_base": round(w_base, 1) if w_base is not None else None,
+                "t850": t850, "t700": t700,
                 "rh_850": rh850, "rh_700": rh700,
                 "lapse_rate": lr,
+                "lapse_850_700": lr_850_700,
                 "bl_height": bl, "cape": cape_v, "cin": cin, "lifted_index": li,
                 "shortwave_radiation": sw,
                 "updraft": round(updraft_v, 2) if updraft_v is not None else None,
@@ -478,11 +549,11 @@ def assess_per_model(per_model_profiles: dict, loc: dict) -> dict:
         f_hours = flyable["continuous_flyable_hours"]
         t_hours = tw.get("duration_h", 0)
 
-        # Quick wind check
-        winds_700 = [p["wind_700"] for p in profile
+        # Quick wind check — use wind at base height
+        winds_base = [p["wind_at_base"] for p in profile
                      if WINDOW_START_H <= int(p["hour"][:2]) <= WINDOW_END_H
-                     and p.get("wind_700") is not None]
-        high_wind = winds_700 and statistics.mean(winds_700) > 5.0
+                     and p.get("wind_at_base") is not None]
+        high_wind = winds_base and statistics.mean(winds_base) > 5.0
 
         # Quick precip check
         p13 = None
@@ -521,7 +592,7 @@ def compute_flags(profile: list, loc: dict, flyable: dict,
     peaks = loc["peaks"]
     tw_hours = (thermal_window or {}).get("duration_h", 0)
 
-    winds_700, gusts_all, winds_10m, bases, capes, cins = [], [], [], [], [], []
+    winds_base, gusts_all, winds_10m, bases, capes, cins = [], [], [], [], [], []
     lapse_rates, bl_heights, wstars, sw_rads = [], [], [], []
     gust_factors = []
 
@@ -529,8 +600,8 @@ def compute_flags(profile: list, loc: dict, flyable: dict,
         h = int(p["hour"].split(":")[0])
         if h < WINDOW_START_H or h > WINDOW_END_H:
             continue
-        if p.get("wind_700") is not None:
-            winds_700.append(p["wind_700"])
+        if p.get("wind_at_base") is not None:
+            winds_base.append(p["wind_at_base"])
         if p.get("gusts") is not None:
             gusts_all.append(p["gusts"])
         if p.get("wind_10m") is not None:
@@ -553,10 +624,10 @@ def compute_flags(profile: list, loc: dict, flyable: dict,
             gust_factors.append(p["gust_factor"])
 
     # ── Stop-flags (Critical) ──
-    if winds_700 and statistics.mean(winds_700) > 5.0:
-        mean_w = statistics.mean(winds_700)
-        flags.append(("SUSTAINED_WIND_700",
-                      f"mean {mean_w:.1f} m/s over window > 5.0 (closed route threshold)"))
+    if winds_base and statistics.mean(winds_base) > 5.0:
+        mean_w = statistics.mean(winds_base)
+        flags.append(("SUSTAINED_WIND_BASE",
+                      f"mean wind at base {mean_w:.1f} m/s over window > 5.0 (closed route threshold)"))
 
     if gusts_all and statistics.mean(gusts_all) > 10.0:
         flags.append(("GUSTS_HIGH", f"mean {statistics.mean(gusts_all):.1f} m/s > 10.0 in window"))
