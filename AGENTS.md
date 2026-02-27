@@ -7,9 +7,9 @@
 ```
 AGENTS.md                          # Этот файл
 .gitignore                         # reports/ исключены из git
-.dockerignore                      # Исключения для Docker-сборки
+.dockerignore                      # Исключения для сборки образа
 Dockerfile                         # Образ: Python + Deno + Playwright
-run.sh                             # Точка входа: Docker по умолчанию
+run.sh                             # Точка входа: Podman по умолчанию
 requirements/
     weather-triage.md              # Требования к метео-триажу
     data-sources.md                # Источники данных + методы парсинга
@@ -46,12 +46,12 @@ Adjusted (decreased) column widths for hourly forecast table in Location details
 - Версия должна соответствовать фактическим изменениям.
 
 ## Скрипты
-- Docker (по умолчанию): `./run.sh [DATE] [LOCATIONS] [SOURCES] [HEADLESS_SOURCES]`
+- Podman (по умолчанию): `./run.sh [DATE] [LOCATIONS] [SOURCES] [HEADLESS_SOURCES]`
 - Локальный (без headless): `./run.sh --local [DATE] [LOCATIONS] [SOURCES]`
 - Дата по умолчанию — ближайшая суббота.
 - Файлы отчётов: `YYYY-MM-DD_YYYYMMDD_HHMM.{json,md}` (forecast-date + timestamp).
 - Python-часть не требует pip-зависимостей (только stdlib).
-- Headless-скрапинг (Deno + Playwright) работает только из Docker.
+- Headless-скрапинг (Deno + Playwright) работает только из контейнера.
 - Скрипты не требуют платных API-ключей для базовой функциональности.
 
 ## Git

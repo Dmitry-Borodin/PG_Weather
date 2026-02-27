@@ -1,4 +1,4 @@
-FROM denoland/deno:debian-2.1.4
+FROM docker.io/denoland/deno:debian-2.1.4
 
 # Python 3 + Chromium system deps (fonts, libs)
 RUN apt-get update && \

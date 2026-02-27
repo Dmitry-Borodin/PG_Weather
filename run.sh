@@ -9,20 +9,20 @@
 #
 # Модули: fetch_weather.py → fetchers.py / analysis.py / report.py
 #
-# По умолчанию запускается через Docker (с headless Playwright).
+# По умолчанию запускается через Podman (с headless Playwright).
 # Дата по умолчанию — ближайшая суббота (или сегодня, если суббота).
 #
 # Использование:
-#   ./run.sh                                   # Docker, след. суббота, все локации
-#   ./run.sh 2025-07-15                        # Docker, конкретная дата
-#   ./run.sh 2025-07-15 lenggries,koessen      # Docker, конкретные локации
-#   ./run.sh 2025-07-15 all ecmwf_hres,icon_d2 meteo_parapente  # Docker, конкретные источники
+#   ./run.sh                                   # Podman, след. суббота, все локации
+#   ./run.sh 2025-07-15                        # Podman, конкретная дата
+#   ./run.sh 2025-07-15 lenggries,koessen      # Podman, конкретные локации
+#   ./run.sh 2025-07-15 all ecmwf_hres,icon_d2 meteo_parapente  # Podman, конкретные источники
 #
-# Локальный режим (без Docker, без headless):
-#   ./run.sh --local                           # след. суббота, без Docker
-#   ./run.sh --local 2025-07-15                # конкретная дата, без Docker
+# Локальный режим (без Podman, без headless):
+#   ./run.sh --local                           # след. суббота, без Podman
+#   ./run.sh --local 2025-07-15                # конкретная дата, без Podman
 #
-# Интерактивный режим (shell внутри Docker-контейнера):
+# Интерактивный режим (shell внутри Podman-контейнера):
 #   ./run.sh --shell                           # bash в контейнере с монтированными reports/
 
 set -euo pipefail
@@ -59,50 +59,39 @@ if [[ "${1:-}" == "--local" ]]; then
     exit $?
 fi
 
-# Docker preflight checks
-if ! command -v docker >/dev/null 2>&1; then
-    echo "Docker is not installed or not in PATH."
+# Docker/Podman preflight checks
+if ! command -v podman >/dev/null 2>&1; then
+    echo "Podman is not installed or not in PATH."
     echo "Use local mode instead: ./run.sh --local [DATE] [LOCATIONS] [SOURCES]"
     exit 127
 fi
 
-if ! docker info >/dev/null 2>&1; then
-    echo "Docker daemon is not reachable."
-    echo "Start Docker Desktop/daemon, or use local mode: ./run.sh --local"
-    exit 1
-fi
+echo "Building container image..."
+podman build -t "$IMAGE_NAME" .
+
+mkdir -p reports
 
 # ── Shell mode (interactive bash inside Docker) ──
 if [[ "${1:-}" == "--shell" ]]; then
     shift
 
-    echo "Building Docker image..."
-    DOCKER_BUILDKIT=1 docker build -t "$IMAGE_NAME" .
-
-    mkdir -p reports
-
     echo "Starting interactive shell in container..."
     echo "  reports/ is mounted at /app/reports"
     echo "  Run: python3 scripts/fetch_weather.py --help"
-    docker run --rm -it \
+    podman run --rm -it \
         -v "$(pwd)/reports:/app/reports" \
         --entrypoint /bin/bash \
         "$IMAGE_NAME"
     exit $?
 fi
 
-# ── Docker mode (default) ──
+# ── Container mode (default) ──
 DATE="${1:-$(next_saturday)}"
 LOCATIONS="${2:-all}"
 SOURCES="${3:-all}"
 HEADLESS="${4:-meteo_parapente}"
 
-echo "Building Docker image..."
-DOCKER_BUILDKIT=1 docker build -t "$IMAGE_NAME" .
-
-mkdir -p reports
-
-docker run --rm \
+podman run --rm \
     -v "$(pwd)/reports:/app/reports" \
     "$IMAGE_NAME" \
     --date "$DATE" \
