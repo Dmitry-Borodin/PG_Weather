@@ -1,25 +1,13 @@
 # Оценка лётности — как считаются очки и статусы
 
-**Версия:** 2.7
+**Версия:** 3.0
 
 ---
 
-## 1. Обзор (v2.0)
+## 1. Обзор
 
 Для каждой локации автоматически вычисляется числовой **score** и текстовый **status**.
 Статус определяет, стоит ли ехать в это место для XC closed route полёта.
-
-### Ключевые изменения v2.0 относительно v1.0
-
-| Аспект | v1.0 | v2.0 |
-|--------|------|------|
-| **Формула score** | `-3×crit - 2×base - 1×qual - 1×danger + 2×pos` | Base score от thermal window + deductions + bonuses |
-| **Главный критерий** | Количество и тяжесть флагов | **Размер термического окна** (часы thermal activity) |
-| **Вес позитивов** | +2 за каждый | +1 за каждый |
-| **Hard rule: база** | Нет | base < 2000m MSL → max MAYBE |
-| **Multi-model** | Нет | Per-model assessment: если модель → NO-GO → ухудшение |
-| **Meteo-Parapente** | Нет | Интеграция: MP_STRONG_THERMALS / MP_WEAK_THERMALS |
-| **Fallback chains** | Фиксированные ключи | Family-based (ICON D2→EU→Global, ECMWF 0.25→0.4) |
 
 ---
 
@@ -27,20 +15,20 @@
 
 | Статус | Emoji | Значение | Когда (после hard rules) |
 |--------|-------|----------|--------------------------|
-| **STRONG** | 💚 | Big day — высокие шансы на 150+ closed | score > 4 |
-| **GO** | 🟢 | Уверенный шанс на 100+ closed | score > 1 и ≤ 4 |
+| **GREAT** | 💚 | Big day — высокие шансы на 150+ closed | score > 4 |
+| **GOOD** | 🟢 | Уверенный шанс на 100+ closed | score > 1 и ≤ 4 |
 | **MAYBE** | 🟡 | Возможно при удачном стечении | score > −2 и ≤ 1 |
 | **UNLIKELY** | 🟠 | Маловероятно | score > −5 и ≤ −2 |
 | **NO-GO** | 🔴 | Нереалистично | score ≤ −5 или hard rules |
 | **NO DATA** | ⚪ | Нет данных для оценки | tw_hours=0 и 0 флагов и 0 позитивов |
 
-Финальная сортировка результатов: STRONG → GO → MAYBE → UNLIKELY → NO-GO → NO DATA.
+Финальная сортировка результатов: GREAT → GOOD → MAYBE → UNLIKELY → NO-GO → NO DATA.
 
 ---
 
 ## 3. Входные данные для оценки
 
-### 3.1 Averaged Hourly Profile (v2.5)
+### 3.1 Averaged Hourly Profile
 
 Для scoring строится **усреднённый профиль** из best ICON и best ECMWF (08:00–18:00 local).
 Общие параметры (temp, wind, cloud, precip, CAPE, SW, lapse и т.д.) — среднее арифметическое обеих моделей.
@@ -88,7 +76,7 @@ ICON-only поле: `updraft` — берётся из ICON напрямую.
 - `peak_hour` — час с максимальным lapse_rate (при равенстве — максимальный CAPE)
 - `peak_lapse` / `peak_cape` — значения в peak_hour
 
-**`tw_hours` — главный драйвер базового score в v2.0.**
+**`tw_hours` — главный драйвер базового score.**
 
 ---
 
@@ -115,27 +103,32 @@ Flyable = можно лететь (не сдует, не зальёт). Thermal 
 
 | Флаг | Условие | Агрегация |
 |------|---------|-----------|
-| `SUSTAINED_WIND_BASE` | mean(wind_at_base) > 5.0 м/с | среднее по окну 09–18, wind_at_base интерполируется между 850/700 hPa на высоте базы |
 | `GUSTS_HIGH` | mean(windgusts_10m) > 10.0 м/с | среднее по окну 09–18 |
 | `PRECIP_13` | precipitation @13:00 > 0.5 мм | точка 13:00 |
 | `NO_FLYABLE_WINDOW` | continuous_flyable_hours = 0 | compute_flyable_window |
 
-### 6.2 Low Base (вес −2)
+### 6.1b Major (вес −2, не влияет на hard rules)
 
 | Флаг | Условие | Агрегация |
-|------|---------|-----------|
+|------|---------|----------|
+| `SUSTAINED_WIND_BASE` | mean(wind_at_base) > 5.0 м/с | среднее по окну 09–18, wind_at_base интерполируется между 850/700 hPa на высоте базы |
 | `LOW_BASE` | min(cloudbase_msl) − peaks < 1000 м | минимум по окну 09–18 |
 
-### 6.3 Quality (вес −1 за каждый)
+Примечание: Major-флаги снижают score на 2, но не являются critical и не участвуют в hard rules.
+
+### 6.2 Minor (вес −1 за каждый)
 
 | Флаг | Условие | Агрегация |
-|------|---------|-----------|
+|------|---------|----------|
 | `OVERCAST` | cloudcover @13:00 > 80% | точка 13:00 |
 | `STABLE` | mean(lapse_rate) < 5.5 °C/km | среднее по окну 09–18 |
-| `SHORT_WINDOW` | 0 < thermal_window_hours < 5 | thermal window detection |
+| `SHORT_WINDOW` | 2 < thermal_window_hours < 5 | thermal window detection |
+| `VERY_SHORT_WINDOW` | 0 < thermal_window_hours ≤ 2 | thermal window detection |
 | `GUST_FACTOR` | max(gust_factor) > 7.0 м/с | максимум по окну 09–18 |
 
-### 6.4 Danger (вес −1 за каждый)
+Примечание: `VERY_SHORT_WINDOW` и `SHORT_WINDOW` взаимоисключающие — срабатывает только один.
+
+### 6.3 Danger (вес −1 за каждый)
 
 | Флаг | Условие | Агрегация |
 |------|---------|-----------|
@@ -145,11 +138,11 @@ Flyable = можно лететь (не сдует, не зальёт). Thermal 
 
 Примечание: `CAPE_RISING` генерируется только если уже есть `HIGH_CAPE`.
 
-### 6.5 Дополнительные флаги (добавляются hard rules, v2.0)
+### 6.4 Дополнительные флаги (добавляются hard rules)
 
 | Флаг | Источник | Описание |
 |------|----------|----------|
-| `LOW_BASE_HARD` | Hard Rule 3 | min base < 2000m MSL → max MAYBE |
+| `LOW_BASE_HARD` | Hard Rule 3 | base @13 < 2000m MSL → max MAYBE |
 | `MODEL_DISAGREE` | Hard Rule 4 | Одна+ модель → NO-GO/UNLIKELY |
 | `LOW_CONFIDENCE` | Hard Rule 5 | Model agreement LOW |
 | `ENS_WIND_SPREAD` | Hard Rule 6 | Ensemble wind spread > 5 м/с |
@@ -159,7 +152,7 @@ Flyable = можно лететь (не сдует, не зальёт). Thermal 
 
 ---
 
-## 7. Позитивные индикаторы (v2.2)
+## 7. Позитивные индикаторы
 
 | Флаг | Вес | Условие | Агрегация |
 |------|-----|---------|------------|
@@ -181,7 +174,7 @@ Flyable = можно лететь (не сдует, не зальёт). Thermal 
 
 Сравнение **лучшей доступной ECMWF** vs **лучшей доступной ICON** at 13:00 local.
 
-В v2.0 модели определяются динамически (какая успела в fallback chain):
+Модели определяются динамически (какая успела в fallback chain):
 
 ```
 Best ECMWF: ecmwf_ifs025 → ecmwf_ifs04 → ecmwf_hres(legacy)
@@ -228,7 +221,7 @@ agreement_score = count(agree) / count(total)
 
 ---
 
-## 10. Формула Score (v2.0 — REDESIGNED)
+## 10. Формула Score
 
 ### 10.1 Base Score: Thermal Window
 
@@ -239,23 +232,23 @@ agreement_score = count(agree) / count(total)
 | 0 | −6 | Нет термиков → NO-GO territory |
 | 1–2 | −2 | Слабые термики → UNLIKELY |
 | 3–4 | +1 | Приемлемый день → MAYBE+ |
-| 5–6 | +4 | Хороший день → GO |
-| 7+ | +6 | Отличный день → STRONG territory |
+| 5–6 | +4 | Хороший день → GOOD |
+| 7+ | +6 | Отличный день → GREAT territory |
 
 ### 10.2 Deductions (вычитаются из base_score)
 
 ```
 score = base_score
       - 3 × n_critical
-      - 2 × n_low_base
-      - 1 × n_quality
+      - 2 × n_major
+      - 1 × n_minor
       - 1 × n_danger
 ```
 
 ### 10.3 Bonuses
 
 ```
-score += 1 × n_positive    (каждый позитив = +1, снижено с +2 в v1.0)
+score += 1 × n_positive    (каждый позитив = +1)
 ```
 
 ### 10.4 Пороги score → status
@@ -265,17 +258,18 @@ score += 1 × n_positive    (каждый позитив = +1, снижено с
 | ≤ −5 | NO-GO |
 | −4 … −2 | UNLIKELY |
 | −1 … 1 | MAYBE |
-| 2 … 4 | GO |
-| ≥ 5 | STRONG |
+| 2 … 4 | GOOD |
+| ≥ 5 | GREAT |
 
-### 10.5 Примеры v2.0
+### 10.5 Примеры
 
 | Ситуация | tw_hours | base | Deductions | Positives | Score | Status (до hard rules) |
 |----------|----------|------|------------|-----------|-------|----------------------|
-| Big XC day | 8 | +6 | 0 | 5×(+1) | +11 | STRONG |
-| Хороший день, ветерок | 6 | +4 | WIND_850(−3) | 3×(+1) | +4 | GO |
-| Средний день | 4 | +1 | OVERCAST(−1) | 2×(+1) | +2 | GO |
+| Big XC day | 8 | +6 | 0 | 5×(+1) | +11 | GREAT |
+| Хороший день, ветерок | 6 | +4 | WIND_BASE(−2) | 3×(+1) | +5 | GREAT |
+| Средний день | 4 | +1 | OVERCAST(−1) | 2×(+1) | +2 | GOOD |
 | Слабый | 3 | +1 | STABLE(−1), SHORT_WINDOW(−1) | 1×(+1) | 0 | MAYBE |
+| Очень слабый | 2 | −2 | VERY_SHORT_WINDOW(−1) | 1×(+1) | −2 | UNLIKELY → MAYBE (hard rule 3b) |
 | Плохой | 2 | −2 | GUSTS_HIGH(−3), LOW_BASE(−2) | 1×(+1) | −6 | NO-GO |
 | Нет термиков | 0 | −6 | OVERCAST(−1) | 0 | −7 | NO-GO |
 
@@ -289,34 +283,42 @@ Score-based статус может быть **понижен** жёсткими
 ### Rule 1: Множественные critical → NO-GO
 
 ```
-IF n_critical ≥ 2  OR  (n_critical ≥ 1 AND n_low_base ≥ 1):
+IF n_critical ≥ 2  OR  (n_critical ≥ 1 AND n_base ≥ 1):
     status = "NO-GO"
 ```
 
 ### Rule 2: Один critical при хорошем score → MAYBE
 
 ```
-IF n_critical ≥ 1  AND  status IN ("GO", "STRONG"):
+IF n_critical ≥ 1  AND  status IN ("GOOD", "GREAT"):
     status = "MAYBE"
 ```
 
-### Rule 3 (v2.0): Низкая база → max MAYBE ⭐
+### Rule 3: Низкая база @13 → max MAYBE
 
 ```
-IF cloudbase_min < 2000 m MSL  AND  status IN ("GO", "STRONG"):
+IF cloudbase_at_13 < 2000 m MSL  AND  status IN ("GOOD", "GREAT"):
     status = "MAYBE"
     + флаг LOW_BASE_HARD
 ```
 
-Логика: база ниже 2000m = нет серьёзного XC. Даже если все остальные параметры
-идеальны — MAYBE максимум.
+Логика: база ниже 2000m в 13:00 = нет серьёзного XC. Проверяется значение в 13:00 (пиковый час), а не минимум по окну.
 
-### Rule 4 (v2.0): Per-model disagreement → worsen ⭐
+### Rule 3b: Очень короткое термическое окно → max MAYBE
+
+```
+IF tw_hours > 0  AND  tw_hours ≤ 2  AND  status IN ("GOOD", "GREAT"):
+    status = "MAYBE"
+```
+
+Логика: термическое окно ≤2 часа недостаточно для серьёзного XC.
+
+### Rule 4: Per-model disagreement → worsen
 
 ```
 bad_models = модели с assess_per_model().status IN ("NO-GO", "UNLIKELY")
 
-IF bad_models  AND  status IN ("GO", "STRONG"):
+IF bad_models  AND  status IN ("GOOD", "GREAT"):
     score -= len(bad_models)
     + флаг MODEL_DISAGREE
 
@@ -331,7 +333,7 @@ IF bad_models  AND  status IN ("GO", "STRONG"):
 ### Rule 5: Низкая модельная уверенность → MAYBE
 
 ```
-IF model_agreement.confidence == "LOW"  AND  status IN ("GO", "STRONG"):
+IF model_agreement.confidence == "LOW"  AND  status IN ("GOOD", "GREAT"):
     status = "MAYBE"
     + флаг LOW_CONFIDENCE
 ```
@@ -341,17 +343,17 @@ IF model_agreement.confidence == "LOW"  AND  status IN ("GO", "STRONG"):
 Для каждого ансамбля:
 
 ```
-IF wind_spread > 5 м/с  AND  status IN ("GO", "STRONG"):
+IF wind_spread > 5 м/с  AND  status IN ("GOOD", "GREAT"):
     status = "MAYBE"  +  ENS_WIND_SPREAD
 
-IF cape_spread > 1000 J/kg  AND  status IN ("GO", "STRONG"):
+IF cape_spread > 1000 J/kg  AND  status IN ("GOOD", "GREAT"):
     status = "MAYBE"  +  ENS_CAPE_SPREAD
 ```
 
 ### Rule 7: Нет данных
 
 ```
-IF n_critical == 0  AND  n_quality == 0  AND  n_positive == 0  AND  tw_hours == 0:
+IF n_critical == 0  AND  n_minor == 0  AND  n_positive == 0  AND  tw_hours == 0:
     status = "NO DATA"
 ```
 
@@ -359,16 +361,17 @@ IF n_critical == 0  AND  n_quality == 0  AND  n_positive == 0  AND  tw_hours == 
 
 1. Score → базовый статус
 2. Rule 1 (множественные critical → NO-GO)
-3. Rule 2 (один critical + GO/STRONG → MAYBE)
-4. Rule 3 (base < 2000m → MAYBE) ⭐ v2.0
-5. Rule 4 (per-model disagree → worsen) ⭐ v2.0
-6. Rule 5 (LOW confidence → MAYBE)
-7. Rule 6 (ensemble spread → MAYBE)
-8. Rule 7 (нет данных → NO DATA)
+3. Rule 2 (один critical + GOOD/GREAT → MAYBE)
+4. Rule 3 (base @13 < 2000m → MAYBE)
+5. Rule 3b (термическое окно ≤2h → MAYBE)
+6. Rule 4 (per-model disagree → worsen)
+7. Rule 5 (LOW confidence → MAYBE)
+8. Rule 6 (ensemble spread → MAYBE)
+9. Rule 7 (нет данных → NO DATA)
 
 ---
 
-## 12. Per-Model Assessment (v2.0) ⭐
+## 12. Per-Model Assessment
 
 Помимо combined assessment, для каждой доступной детерминистической модели
 строится **упрощённая оценка** через `assess_per_model()`:
@@ -394,7 +397,7 @@ icon_d2, icon_eu, icon_global, ecmwf_ifs025, ecmwf_ifs04, gfs_seamless
 | precip @13 > 0.5 OR flyable = 0 OR high_wind | NO-GO |
 | thermal ≤ 2 OR flyable < 4 | UNLIKELY |
 | thermal ≤ 4 | MAYBE |
-| thermal > 4 | GO |
+| thermal > 4 | GOOD |
 
 ### 12.3 Влияние на общий score
 
@@ -403,12 +406,12 @@ Per-model assessments влияют ТОЛЬКО через Hard Rule 4:
 - Если ≥2 модели → status UNLIKELY
 - Если 1 модель → status MAYBE
 
-Это предотвращает ситуацию, когда combined profile (best-of-all) показывает GO,
+Это предотвращает ситуацию, когда combined profile (best-of-all) показывает GOOD,
 но одна из моделей по отдельности даёт NO-GO.
 
 ---
 
-## 13. Meteo-Parapente Integration (v2.0) ⭐
+## 13. Meteo-Parapente Integration
 
 ### 13.1 Когда вызывается
 
@@ -436,7 +439,7 @@ Per-model assessments влияют ТОЛЬКО через Hard Rule 4:
 | Условие | Действие |
 |---------|----------|
 | max_thermal ≥ 1.5 AND thermal_hours ≥ 3 | +1 score, positive `MP_STRONG_THERMALS` |
-| max_thermal < 0.3 AND thermal_hours ≤ 1 | −1 score, flag `MP_WEAK_THERMALS`, GO/STRONG → MAYBE |
+| max_thermal < 0.3 AND thermal_hours ≤ 1 | −1 score, flag `MP_WEAK_THERMALS`, GOOD/GREAT → MAYBE |
 
 ---
 
@@ -455,8 +458,8 @@ Per-model assessments влияют ТОЛЬКО через Hard Rule 4:
 `peaks` определяет минимально необходимую базу облаков для XC.
 `base_margin = cloudbase_msl − peaks`. Отрицательный margin = лететь невозможно.
 
-Hard Rule 3 (v2.0): `cloudbase_min < 2000m` → max MAYBE — это **абсолютный** порог,
-не привязанный к peaks. Даже в Bassano (peaks=1700) база 1900m = max MAYBE.
+Hard Rule 3: `cloudbase_at_13 < 2000m` → max MAYBE — это **абсолютный** порог,
+не привязанный к peaks. Проверяется base в 13:00 (пиковый час). Даже в Bassano (peaks=1700) база 1900m @13 = max MAYBE.
 
 ---
 

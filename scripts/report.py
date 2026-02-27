@@ -17,9 +17,9 @@ from fetchers import APP_VERSION, MODEL_LABELS, MOSMIX_PARAMS_OF_INTEREST
 
 STATUS_EMOJI = {
     "NO-GO": "🔴", "UNLIKELY": "🟠", "MAYBE": "🟡",
-    "GO": "🟢", "STRONG": "💚", "NO DATA": "⚪",
+    "GOOD": "🟢", "GREAT": "💚", "NO DATA": "⚪",
 }
-STATUS_ORDER = {"STRONG": 0, "GO": 1, "MAYBE": 2, "UNLIKELY": 3, "NO-GO": 4, "NO DATA": 5}
+STATUS_ORDER = {"GREAT": 0, "GOOD": 1, "MAYBE": 2, "UNLIKELY": 3, "NO-GO": 4, "NO DATA": 5}
 
 
 # ══════════════════════════════════════════════

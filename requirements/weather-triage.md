@@ -132,9 +132,9 @@ FAI-треугольник не обязателен. Open distance не инт�
 
 | Условие | Действие | Флаг |
 |---------|----------|------|
-| Model agreement < 50% + GO/STRONG | → MAYBE | LOW_CONFIDENCE |
-| Ensemble wind spread > 5 м/с + GO/STRONG | → MAYBE | ENS_WIND_SPREAD |
-| Ensemble CAPE spread > 1000 J/kg + GO/STRONG | → MAYBE | ENS_CAPE_SPREAD |
+| Model agreement < 50% + GOOD/GREAT | → MAYBE | LOW_CONFIDENCE |
+| Ensemble wind spread > 5 м/с + GOOD/GREAT | → MAYBE | ENS_WIND_SPREAD |
+| Ensemble CAPE spread > 1000 J/kg + GOOD/GREAT | → MAYBE | ENS_CAPE_SPREAD |
 
 ### Определение «рабочее окно»
 Непрерывный интервал (от 1 ч и более), где одновременно:
@@ -208,8 +208,8 @@ FAI-треугольник не обязателен. Open distance не инт�
 | NO-GO | Нереалистично | ≤ −5 или ≥2 критических |
 | UNLIKELY | Маловероятно | ≤ −2 |
 | MAYBE | При удачном стечении | ≤ 1 |
-| GO | Уверенный шанс | ≤ 4 |
-| STRONG | Big day | > 4 |
+| GOOD | Уверенный шанс | ≤ 4 |
+| GREAT | Big day | > 4 |
 | NO DATA | Нет данных | 0 флагов и 0 позитивов |
 
 ---
@@ -263,12 +263,12 @@ Spreads ECMWF ENS + ICON-EU EPS at_13_local.
 ### Этап 8 — Scoring & Status (`compute_status`)
 Thermal-window-centric scoring:
 - `base_score` по `tw_hours`: 0→−6, 1–2→−2, 3–4→+1, 5–6→+4, 7+→+6
-- затем deductions: `−3×critical −2×LOW_BASE −1×quality −1×danger`
+- затем deductions: `−3×critical −2×major −1×minor −1×danger`
 - затем bonuses: `+1×positive`, `VERY_HIGH_BASE` = +2
 - hard rules: критические комбинации, LOW_BASE_HARD (<2000 MSL), MODEL_DISAGREE, LOW_CONFIDENCE, ENS_*_SPREAD, NO DATA
 
 ### Этап 9 — Финальный ранжир
-Все локации сортируются по STATUS_ORDER: STRONG > GO > MAYBE > UNLIKELY > NO-GO > NO DATA.
+Все локации сортируются по STATUS_ORDER: GREAT > GOOD > MAYBE > UNLIKELY > NO-GO > NO DATA.
 
 ---
 
@@ -323,8 +323,8 @@ Thermal-window-centric scoring:
 ```
 score = base_score
       − 3 × n_critical
-      − 2 × n_low_base
-      − 1 × n_quality
+      − 2 × n_major
+      − 1 × n_minor
       − 1 × n_danger
       + 1 × n_positive
       + 2 × n_very_high_base
@@ -338,16 +338,17 @@ score = base_score
 | ≤ −5 | NO-GO |
 | ≤ −2 | UNLIKELY |
 | ≤ 1 | MAYBE |
-| ≤ 4 | GO |
-| > 4 | STRONG |
+| ≤ 4 | GOOD |
+| > 4 | GREAT |
 
 ### Жёсткие правила понижения
 
 1. ≥ 2 критических **ИЛИ** (≥ 1 критический + LOW_BASE) → **NO-GO** (безусловно)
-2. ≥ 1 критический + статус GO/STRONG → **MAYBE**
-3. min cloud base < 2000m MSL + статус GO/STRONG → **MAYBE** + `LOW_BASE_HARD`
-4. Per-model disagreement (NO-GO/UNLIKELY в одной+ модели) + GO/STRONG → **MAYBE/UNLIKELY** + `MODEL_DISAGREE`
-5. Model agreement confidence = LOW + статус GO/STRONG → **MAYBE** + `LOW_CONFIDENCE`
-6. Ensemble wind spread > 5 м/с + GO/STRONG → **MAYBE** + `ENS_WIND_SPREAD`
-7. Ensemble CAPE spread > 1000 J/kg + GO/STRONG → **MAYBE** + `ENS_CAPE_SPREAD`
-8. 0 критических + 0 quality + 0 positives + tw_hours=0 → **NO DATA**
+2. ≥ 1 критический + статус GOOD/GREAT → **MAYBE**
+3. base @13 < 2000m MSL + статус GOOD/GREAT → **MAYBE** + `LOW_BASE_HARD`
+3b. tw ≤ 2h + статус GOOD/GREAT → **MAYBE**
+4. Per-model disagreement (NO-GO/UNLIKELY в одной+ модели) + GOOD/GREAT → **MAYBE/UNLIKELY** + `MODEL_DISAGREE`
+5. Model agreement confidence = LOW + статус GOOD/GREAT → **MAYBE** + `LOW_CONFIDENCE`
+6. Ensemble wind spread > 5 м/с + GOOD/GREAT → **MAYBE** + `ENS_WIND_SPREAD`
+7. Ensemble CAPE spread > 1000 J/kg + GOOD/GREAT → **MAYBE** + `ENS_CAPE_SPREAD`
+8. 0 критических + 0 minor + 0 positives + tw_hours=0 → **NO DATA**

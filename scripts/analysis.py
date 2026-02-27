@@ -35,8 +35,9 @@ _GFS_ONLY_FIELDS = {"boundary_layer_height", "lifted_index", "convective_inhibit
 # updraft: ICON D2 only (2 km, ≤48ч) — EU/Global return null (v2.3)
 
 # Flag categories for scoring
-CRITICAL_TAGS = {"SUSTAINED_WIND_BASE", "GUSTS_HIGH", "PRECIP_13", "NO_FLYABLE_WINDOW"}
-QUALITY_TAGS  = {"OVERCAST", "STABLE", "SHORT_WINDOW", "GUST_FACTOR"}
+CRITICAL_TAGS = {"GUSTS_HIGH", "PRECIP_13", "NO_FLYABLE_WINDOW"}
+MAJOR_TAGS    = {"SUSTAINED_WIND_BASE", "LOW_BASE"}  # weight −2, does NOT trigger hard rules
+MINOR_TAGS    = {"OVERCAST", "STABLE", "SHORT_WINDOW", "VERY_SHORT_WINDOW", "GUST_FACTOR"}
 DANGER_TAGS   = {"HIGH_CAPE", "VERY_UNSTABLE", "CAPE_RISING"}
 
 
@@ -570,7 +571,7 @@ def assess_per_model(per_model_profiles: dict, loc: dict) -> dict:
         elif t_hours <= 4:
             status = "MAYBE"
         else:
-            status = "GO"
+            status = "GOOD"
 
         assessments[model_key] = {
             "flyable_hours": f_hours,
@@ -639,7 +640,9 @@ def compute_flags(profile: list, loc: dict, flyable: dict,
     cfw = flyable.get("continuous_flyable_hours", 0)
     if cfw == 0:
         flags.append(("NO_FLYABLE_WINDOW", "no continuous flyable hour detected"))
-    if 0 < tw_hours < 5:
+    if 0 < tw_hours <= 2:
+        flags.append(("VERY_SHORT_WINDOW", f"thermal window {tw_hours}h ≤ 2h"))
+    elif 2 < tw_hours < 5:
         flags.append(("SHORT_WINDOW", f"thermal window {tw_hours}h < 5h"))
 
     if bases:
@@ -796,7 +799,7 @@ def compute_ensemble_uncertainty(sources: dict) -> dict:
 # ══════════════════════════════════════════════
 
 def compute_status(flags, positives, agreement, ensemble_unc,
-                   thermal_window, cloudbase_min,
+                   thermal_window, cloudbase_at_13,
                    per_model_assessments=None):
     """Compute score and status.
 
@@ -823,14 +826,14 @@ def compute_status(flags, positives, agreement, ensemble_unc,
 
     # ── Deductions ──
     n_crit = sum(1 for t, _ in flags if t in CRITICAL_TAGS)
-    n_qual = sum(1 for t, _ in flags if t in QUALITY_TAGS)
+    n_major = sum(1 for t, _ in flags if t in MAJOR_TAGS)
+    n_minor = sum(1 for t, _ in flags if t in MINOR_TAGS)
     n_dang = sum(1 for t, _ in flags if t in DANGER_TAGS)
-    n_base = sum(1 for t, _ in flags if t == "LOW_BASE")
 
     score = base_score
     score -= n_crit * 3
-    score -= n_base * 2
-    score -= n_qual * 1
+    score -= n_major * 2
+    score -= n_minor * 1
     score -= n_dang * 1
 
     # ── Bonuses ──
@@ -846,31 +849,36 @@ def compute_status(flags, positives, agreement, ensemble_unc,
     elif score <= 1:
         status = "MAYBE"
     elif score <= 4:
-        status = "GO"
+        status = "GOOD"
     else:
-        status = "STRONG"
+        status = "GREAT"
 
     # ══ Hard Rules ══
 
     # Rule 1: Multiple critical → NO-GO
+    n_base = sum(1 for t, _ in flags if t == "LOW_BASE")
     if n_crit >= 2 or (n_crit >= 1 and n_base >= 1):
         status = "NO-GO"
     # Rule 2: One critical + good status → MAYBE
-    elif n_crit >= 1 and status in ("GO", "STRONG"):
+    elif n_crit >= 1 and status in ("GOOD", "GREAT"):
         status = "MAYBE"
 
-    # Rule 3: Base < 2000m MSL → max MAYBE
-    if cloudbase_min is not None and cloudbase_min < 2000:
-        if status in ("GO", "STRONG"):
+    # Rule 3: Base at 13:00 < 2000m MSL → max MAYBE
+    if cloudbase_at_13 is not None and cloudbase_at_13 < 2000:
+        if status in ("GOOD", "GREAT"):
             status = "MAYBE"
             flags.append(("LOW_BASE_HARD",
-                          f"min base {cloudbase_min:.0f}m MSL < 2000m → max MAYBE"))
+                          f"base @13 {cloudbase_at_13:.0f}m MSL < 2000m → max MAYBE"))
+
+    # Rule 3b: Very short thermal window (≤2h) → max MAYBE
+    if tw_hours > 0 and tw_hours <= 2 and status in ("GOOD", "GREAT"):
+        status = "MAYBE"
 
     # Rule 4: Per-model disagreement → worsen
     if per_model_assessments:
         bad_models = [k for k, m in per_model_assessments.items()
                       if m.get("status") in ("NO-GO", "UNLIKELY")]
-        if bad_models and status in ("GO", "STRONG"):
+        if bad_models and status in ("GOOD", "GREAT"):
             score -= len(bad_models)
             labels = [MODEL_LABELS.get(k, k) for k in bad_models]
             flags.append(("MODEL_DISAGREE",
@@ -882,7 +890,7 @@ def compute_status(flags, positives, agreement, ensemble_unc,
 
     # Rule 5: Low model agreement → MAYBE
     conf = agreement.get("confidence", "UNKNOWN")
-    if conf == "LOW" and status in ("GO", "STRONG"):
+    if conf == "LOW" and status in ("GOOD", "GREAT"):
         status = "MAYBE"
         flags.append(("LOW_CONFIDENCE",
                       f"model agreement {agreement.get('agreement_score', '?')} → confidence LOW"))
@@ -891,23 +899,23 @@ def compute_status(flags, positives, agreement, ensemble_unc,
     for ens_name, ens_data in ensemble_unc.items():
         wind_sp = ens_data.get("windspeed_10m", {}).get("spread")
         cape_sp = ens_data.get("cape", {}).get("spread")
-        if wind_sp is not None and wind_sp > 5 and status in ("GO", "STRONG"):
+        if wind_sp is not None and wind_sp > 5 and status in ("GOOD", "GREAT"):
             status = "MAYBE"
             flags.append(("ENS_WIND_SPREAD", f"{ens_name} wind spread {wind_sp:.1f} m/s"))
-        if cape_sp is not None and cape_sp > 1000 and status in ("GO", "STRONG"):
+        if cape_sp is not None and cape_sp > 1000 and status in ("GOOD", "GREAT"):
             status = "MAYBE"
             flags.append(("ENS_CAPE_SPREAD", f"{ens_name} CAPE spread {cape_sp:.0f} J/kg"))
 
     # Rule 7: No data
-    if n_crit == 0 and n_qual == 0 and len(positives) == 0 and tw_hours == 0:
+    if n_crit == 0 and n_minor == 0 and len(positives) == 0 and tw_hours == 0:
         status = "NO DATA"
 
     breakdown = {
         "tw_hours": tw_hours,
         "base_score": base_score,
         "n_critical": n_crit,
-        "n_low_base": n_base,
-        "n_quality": n_qual,
+        "n_major": n_major,
+        "n_minor": n_minor,
         "n_danger": n_dang,
         "n_positive": len(positives) - n_vhb,
         "n_very_high_base": n_vhb,
@@ -999,7 +1007,7 @@ def integrate_meteo_parapente(result: dict) -> None:
         flags.append({"tag": "MP_WEAK_THERMALS",
                      "msg": f"Meteo-Parapente: max {max_thermal:.1f} m/s — weak thermals"})
         score -= 1
-        if status in ("GO", "STRONG"):
+        if status in ("GOOD", "GREAT"):
             status = "MAYBE"
 
     assessment["flags"] = flags

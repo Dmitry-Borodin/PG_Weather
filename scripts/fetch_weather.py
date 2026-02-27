@@ -280,9 +280,16 @@ def assess_location(loc_key: str, loc: dict, date: str, sources_list: list) -> d
                  and p["cloudbase_msl"] is not None]
     cb_min = min(bases_win) if bases_win else None
 
+    # Base at 13:00 for hard rule scoring (instead of min base)
+    cb_at_13 = None
+    for p in profile:
+        if p["hour"] == "13:00":
+            cb_at_13 = p.get("cloudbase_msl")
+            break
+
     score, status, breakdown = compute_status(
         flags, positives, agreement, ensemble_unc,
-        tw, cb_min, per_model_assessment)
+        tw, cb_at_13, per_model_assessment)
 
     # ── Build assessment dict ──
     # Dynamic best-order based on what's available
