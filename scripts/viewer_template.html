@@ -148,6 +148,10 @@ function fmt(v,u,p){
 }
 function badge(s){return'<span class="badge b-'+((s||'ERROR').replace(/-/g,'').replace(/ /g,''))+'">'+esc(s)+'</span>'}
 function hasV(v){return v!==null&&v!==undefined}
+function windArrow(deg){
+  if(deg==null)return'<span class="na">—</span>';
+  return'<span style="display:inline-block;transform:rotate('+deg+'deg);font-size:1.1em" title="'+deg+'°">↑</span>';
+}
 
 const MODEL_META={
   ecmwf_hres:{name:'ECMWF IFS HRES',step:'0.25°',short:'ECM',api:'ecmwf_ifs025'},
@@ -578,7 +582,7 @@ function renderCardBody(r){
     h+='<h3><span class="model-pill">'+esc(short)+': '+esc(label)+'</span> \u2014 Hourly (08:00\u201318:00)</h3>';
     h+='<div class="table-wrap"><table class="htbl">';
     h+='<tr><th>Hour</th><th>T</th><th>Dew</th><th>Base</th><th>Cloud</th><th>CL/CM/CH</th>';
-    h+='<th>Prcp</th><th>W10</th><th>Gust</th><th>GF</th><th>Wbase</th><th>W850</th><th>W700</th>';
+    h+='<th>Prcp</th><th>W10</th><th></th><th>Gust</th><th>GF</th><th>Wbase</th><th>W850</th><th>W700</th>';
     h+='<th>RH850</th><th>RH700</th><th>Lapse</th><th>CAPE</th><th>SW</th>';
     if(extraCols.updraft)h+='<th>Updr</th>';
     if(extraCols.gfs)h+='<th>BL</th><th>LI</th><th>CIN</th><th>W*</th>';
@@ -597,6 +601,7 @@ function renderCardBody(r){
       h+='<td>'+cl+'</td>';
       h+='<td>'+fmtC(item.precipitation,'',1,'precipitation')+'</td>';
       h+='<td>'+fmtC(item.wind_10m,'',1,'wind_10m')+'</td>';
+      h+='<td>'+windArrow(item.wind_dir_10m)+'</td>';
       h+='<td>'+fmtC(item.gusts,'',1,'gusts')+'</td>';
       h+='<td>'+fmtC(item.gust_factor,'',1,'gust_factor')+'</td>';
       h+='<td>'+fmtC(item.wind_at_base,'',1,'wind_at_base')+'</td>';
@@ -647,7 +652,7 @@ function renderCardBody(r){
     h+='<dt>Cloud</dt><dd>Total cloud cover (%). <span style="color:var(--nogo)">&gt;80% red</span>, <span style="color:var(--good)">&lt;30% green</span></dd>';
     h+='<dt>CL/CM/CH</dt><dd>Low/Mid/High cloud layers (%)</dd>';
     h+='<dt>Prcp</dt><dd>Precipitation (mm/h). <span style="color:var(--nogo)">&gt;0.5 red</span></dd>';
-    h+='<dt>W10</dt><dd>Wind 10m (m/s). <span style="color:var(--nogo)">&gt;8 red</span>, <span style="color:var(--unlikely)">&gt;5 orange</span></dd>';
+    h+='<dt>W10</dt><dd>Wind 10m (m/s). <span style="color:var(--nogo)">&gt;8 red</span>, <span style="color:var(--unlikely)">&gt;5 orange</span>. Arrow shows direction (meteorological: where wind comes FROM, \u2191 = N)</dd>';
     h+='<dt>Gust</dt><dd>Gusts 10m (m/s). <span style="color:var(--nogo)">&gt;10 red</span>, <span style="color:var(--unlikely)">&gt;7 orange</span></dd>';
     h+='<dt>GF</dt><dd>Gust factor = gust \u2212 mean wind (m/s). <span style="color:var(--nogo)">&gt;7 red</span>, <span style="color:var(--unlikely)">&gt;4 orange</span></dd>';
     h+='<dt>W850</dt><dd>Wind 850 hPa (~1500m) \u2014 gradient wind (m/s)</dd>';
@@ -686,7 +691,7 @@ function renderCardBody(r){
       h+='<div class="model-panel'+(idx===0?' active':'')+'" data-model="'+esc(mk)+'">';
       h+='<div class="table-wrap"><table class="htbl">';
       h+='<tr><th>Hour</th><th>T</th><th>Base</th><th>Cloud</th>';
-      h+='<th>Prcp</th><th>W10</th><th>Gust</th><th>W850</th>';
+      h+='<th>Prcp</th><th>W10</th><th></th><th>Gust</th><th>W850</th>';
       h+='<th>Lapse</th><th>BL</th><th>CAPE</th><th>SW</th><th>Updr</th><th>W*</th></tr>';
       mp.forEach(function(item){
         var hrI=parseInt(item.hour);
@@ -699,6 +704,7 @@ function renderCardBody(r){
         h+='<td>'+fmtC(item.cloudcover,'',0,'cloudcover')+'</td>';
         h+='<td>'+fmtC(item.precipitation,'',1,'precipitation')+'</td>';
         h+='<td>'+fmtC(item.wind_10m,'',1,'wind_10m')+'</td>';
+        h+='<td>'+windArrow(item.wind_dir_10m)+'</td>';
         h+='<td>'+fmtC(item.gusts,'',1,'gusts')+'</td>';
         h+='<td>'+fmtC(item.wind_850,'',1,'wind_850')+'</td>';
         h+='<td>'+fmtC(item.lapse_rate,'',1,'lapse_rate')+'</td>';

@@ -254,6 +254,17 @@ def _avg(a, b, decimals=2):
     return a if a is not None else b
 
 
+def _avg_angle(a, b):
+    """Circular mean of two angles in degrees (0-360). Returns int or None."""
+    if a is not None and b is not None:
+        import math
+        ax, ay = math.cos(math.radians(a)), math.sin(math.radians(a))
+        bx, by = math.cos(math.radians(b)), math.sin(math.radians(b))
+        mean_deg = math.degrees(math.atan2(ay + by, ax + bx)) % 360
+        return round(mean_deg)
+    return round(a) if a is not None else (round(b) if b is not None else None)
+
+
 def build_averaged_profile(per_model_profiles: dict, sources: dict,
                            date: str, loc: dict) -> dict:
     """Build averaged hourly profile from best ICON + best ECMWF.
@@ -303,6 +314,7 @@ def build_averaged_profile(per_model_profiles: dict, sources: dict,
         cl_hi = _avg(iv.get("cloudcover_high"), ev.get("cloudcover_high"), 0)
         prec = _avg(iv.get("precipitation"), ev.get("precipitation"))
         ws10 = _avg(iv.get("wind_10m"), ev.get("wind_10m"))
+        wd10 = _avg_angle(iv.get("wind_dir_10m"), ev.get("wind_dir_10m"))
         gust = _avg(iv.get("gusts"), ev.get("gusts"))
         ws850 = _avg(iv.get("wind_850"), ev.get("wind_850"))
         ws700 = _avg(iv.get("wind_700"), ev.get("wind_700"))
@@ -353,7 +365,8 @@ def build_averaged_profile(per_model_profiles: dict, sources: dict,
             "cloudcover": cloud,
             "cloudcover_low": cl_lo, "cloudcover_mid": cl_mi, "cloudcover_high": cl_hi,
             "precipitation": prec,
-            "wind_10m": ws10, "gusts": gust, "gust_factor": gust_factor,
+            "wind_10m": ws10, "wind_dir_10m": wd10,
+            "gusts": gust, "gust_factor": gust_factor,
             "wind_850": ws850, "wind_700": ws700,
             "wind_at_base": round(w_base, 1) if w_base is not None else None,
             "t850": t850_v, "t700": t700_v,
@@ -489,6 +502,7 @@ def build_per_model_profiles(sources: dict, date: str, loc: dict) -> dict:
             cloud = _get_val(h, times, hour, "cloudcover")
             prec = _get_val(h, times, hour, "precipitation")
             ws10 = _get_val(h, times, hour, "windspeed_10m")
+            wd10 = _get_val(h, times, hour, "winddirection_10m")
             gust = _get_val(h, times, hour, "windgusts_10m")
             ws850 = _get_val(h, times, hour, "windspeed_850hPa")
             ws700 = _get_val(h, times, hour, "windspeed_700hPa")
@@ -522,7 +536,8 @@ def build_per_model_profiles(sources: dict, date: str, loc: dict) -> dict:
                 "cloudcover_mid": _get_val(h, times, hour, "cloudcover_mid"),
                 "cloudcover_high": _get_val(h, times, hour, "cloudcover_high"),
                 "precipitation": prec,
-                "wind_10m": ws10, "gusts": gust, "gust_factor": gust_factor,
+                "wind_10m": ws10, "wind_dir_10m": round(wd10) if wd10 is not None else None,
+                "gusts": gust, "gust_factor": gust_factor,
                 "wind_850": ws850, "wind_700": ws700,
                 "wind_at_base": round(w_base, 1) if w_base is not None else None,
                 "t850": t850, "t700": t700,
